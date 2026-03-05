@@ -6,6 +6,15 @@
     <p>Klient: {{ order.client_name or '-' }}</p>
     <p>Adres: {{ order.address or '-' }}</p>
     <p>Status: {{ order.status }}</p>
+    <p>
+        <a href="/orders/{{ order.id }}/pricing">Wycena</a> |
+        <a href="/orders/{{ order.id }}/pricing/history">Historia wycen</a> |
+        {% if latest_quote %}
+            <a href="/pricing/{{ latest_quote.id }}/pdf">PDF</a>
+        {% else %}
+            PDF
+        {% endif %}
+    </p>
 </section>
 
 <section class="card">

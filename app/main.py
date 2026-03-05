@@ -12,6 +12,8 @@ from app.api.auth import set_templates as auth_set_templates
 from app.api.health import router as health_router
 from app.api.orders import router as orders_router
 from app.api.orders import set_templates as orders_set_templates
+from app.api.pricing import router as pricing_router
+from app.api.pricing import set_templates as pricing_set_templates
 from app.api.users import router as users_router
 from app.api.users import set_templates as users_set_templates
 from app.db import SessionLocal, User, init_db
@@ -26,6 +28,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 auth_set_templates(templates)
 orders_set_templates(templates)
+pricing_set_templates(templates)
 users_set_templates(templates)
 
 
@@ -60,6 +63,7 @@ def on_startup():
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(orders_router)
+app.include_router(pricing_router)
 app.include_router(users_router)
 
 
