@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import DATA_DIR
@@ -61,6 +61,7 @@ class Order(Base):
 
     assignments: Mapped[list["OrderAssignment"]] = relationship("OrderAssignment", back_populates="order")
     attachments: Mapped[list["Attachment"]] = relationship("Attachment", back_populates="order")
+    pricing_quotes: Mapped[list["PricingQuote"]] = relationship("PricingQuote", back_populates="order")
 
 
 class OrderAssignment(Base):
@@ -87,6 +88,75 @@ class Attachment(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     order: Mapped[Order] = relationship("Order", back_populates="attachments")
+
+
+class PricingQuote(Base):
+    __tablename__ = "pricing_quotes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    margin_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    labor_hours_planned: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    labor_hours_manual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    labor_rate_per_h: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    power_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    power_rate_per_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    installation_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    service_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    subtotal_net: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    total_net: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    warranty_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    order: Mapped[Order] = relationship("Order", back_populates="pricing_quotes")
+    lines: Mapped[list["QuoteLine"]] = relationship("QuoteLine", back_populates="quote", cascade="all, delete-orphan")
+    fence_input: Mapped["FenceQuoteInput | None"] = relationship(
+        "FenceQuoteInput", back_populates="quote", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class QuoteLine(Base):
+    __tablename__ = "quote_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False)
+    qty: Mapped[float] = mapped_column(Float, nullable=False)
+    unit_price: Mapped[float] = mapped_column(Float, nullable=False)
+    total_price: Mapped[float] = mapped_column(Float, nullable=False)
+
+    quote: Mapped[PricingQuote] = relationship("PricingQuote", back_populates="lines")
+
+
+class FenceTemplate(Base):
+    __tablename__ = "fence_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    fence_inputs: Mapped[list["FenceQuoteInput"]] = relationship("FenceQuoteInput", back_populates="template")
+
+
+class FenceQuoteInput(Base):
+    __tablename__ = "fence_quote_inputs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id"), nullable=False, index=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("fence_templates.id"), nullable=False, index=True)
+    length_m: Mapped[float] = mapped_column(Float, nullable=False)
+    height_m: Mapped[float] = mapped_column(Float, nullable=False)
+    span_m: Mapped[float] = mapped_column(Float, nullable=False)
+    gates_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    wickets_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rounding_mode: Mapped[str] = mapped_column(String(50), nullable=False, default="ceil_0_1")
+
+    quote: Mapped[PricingQuote] = relationship("PricingQuote", back_populates="fence_input")
+    template: Mapped[FenceTemplate] = relationship("FenceTemplate", back_populates="fence_inputs")
 
 
 def get_db():
@@ -127,6 +197,11 @@ def init_db(hash_password_fn):
         admin_role = db.scalar(select(Role).where(Role.code == "admin"))
         if admin_role and admin_role not in admin.roles:
             admin.roles.append(admin_role)
+            db.commit()
+
+        basic_template = db.scalar(select(FenceTemplate).where(FenceTemplate.code == "BASIC"))
+        if not basic_template:
+            db.add(FenceTemplate(code="BASIC", name="Ogrodzenie - podstawowe", is_active=True))
             db.commit()
     finally:
         db.close()

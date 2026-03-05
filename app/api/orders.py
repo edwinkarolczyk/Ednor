@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import UPLOADS_DIR
-from app.db import Attachment, Order, OrderAssignment, Role, User, get_db
+from app.db import Attachment, Order, OrderAssignment, PricingQuote, Role, User, get_db
 from app.security import get_current_user
 
 router = APIRouter(tags=["orders"])
@@ -125,6 +125,9 @@ def order_detail(
     users = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.username)).all()
     roles = db.scalars(select(Role).order_by(Role.name)).all()
     attachments = db.scalars(select(Attachment).where(Attachment.order_id == order_id)).all()
+    latest_quote = db.scalar(
+        select(PricingQuote).where(PricingQuote.order_id == order_id).order_by(PricingQuote.version_no.desc()).limit(1)
+    )
     return templates.TemplateResponse(
         "order_detail.html",
         {
@@ -135,6 +138,7 @@ def order_detail(
             "users": users,
             "roles": roles,
             "attachments": attachments,
+            "latest_quote": latest_quote,
             "is_admin": _is_admin(current_user),
             "current_user": request.state.current_user,
         },
