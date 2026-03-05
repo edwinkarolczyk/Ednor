@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card">
+    <div class="row-between">
+        <h1>Zlecenia</h1>
+        <button type="button">Dodaj</button>
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>Klient</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td>001</td>
+            <td>Placeholder Sp. z o.o.</td>
+            <td>Nowe</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <form class="upload-form" action="/api/orders/001/upload" method="post" enctype="multipart/form-data">
+        <label for="file">Upload pliku (placeholder):</label>
+        <input id="file" name="file" type="file" required>
+        <button type="submit">Wyślij plik</button>
+    </form>
+</section>
+{% endblock %}
