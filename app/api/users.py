@@ -35,7 +35,7 @@ def users_page(
             "page_title": "Użytkownicy",
             "users": users,
             "roles": roles,
-            "current_user": current_user,
+            "current_user": request.state.current_user,
         },
     )
 

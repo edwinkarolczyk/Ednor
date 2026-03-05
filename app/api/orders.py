@@ -44,7 +44,7 @@ def my_orders(
             "request": request,
             "page_title": "Moje zlecenia",
             "assignments": assignments,
-            "current_user": current_user,
+            "current_user": request.state.current_user,
         },
     )
 
@@ -60,7 +60,7 @@ def orders_page(
     orders = db.scalars(select(Order).order_by(Order.created_at.desc())).all()
     return templates.TemplateResponse(
         "orders.html",
-        {"request": request, "page_title": "Zlecenia", "orders": orders, "current_user": current_user},
+        {"request": request, "page_title": "Zlecenia", "orders": orders, "current_user": request.state.current_user},
     )
 
 
@@ -69,7 +69,7 @@ def new_order_form(request: Request, current_user: User = Depends(get_current_us
     if not _is_admin(current_user):
         raise HTTPException(status_code=403)
     return templates.TemplateResponse(
-        "order_new.html", {"request": request, "page_title": "Nowe zlecenie", "current_user": current_user}
+        "order_new.html", {"request": request, "page_title": "Nowe zlecenie", "current_user": request.state.current_user}
     )
 
 
@@ -136,7 +136,7 @@ def order_detail(
             "roles": roles,
             "attachments": attachments,
             "is_admin": _is_admin(current_user),
-            "current_user": current_user,
+            "current_user": request.state.current_user,
         },
     )
 

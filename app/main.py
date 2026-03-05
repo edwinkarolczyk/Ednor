@@ -1,9 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import joinedload
 
 from app.api.auth import router as auth_router
 from app.api.auth import set_templates as auth_set_templates
@@ -12,7 +14,7 @@ from app.api.orders import router as orders_router
 from app.api.orders import set_templates as orders_set_templates
 from app.api.users import router as users_router
 from app.api.users import set_templates as users_set_templates
-from app.db import SessionLocal, init_db
+from app.db import SessionLocal, User, init_db
 from app.security import hash_password, read_session_token
 
 app = FastAPI(title="Ednor WEB Skeleton")
@@ -35,9 +37,16 @@ async def add_current_user(request: Request, call_next):
     if user_id:
         db = SessionLocal()
         try:
-            from app.db import User
-
-            request.state.current_user = db.get(User, user_id)
+            user = db.query(User).options(joinedload(User.roles)).filter(User.id == user_id).first()
+            if user:
+                roles_vm = [SimpleNamespace(code=role.code, name=role.name) for role in (user.roles or [])]
+                request.state.current_user = SimpleNamespace(
+                    id=user.id,
+                    username=user.username,
+                    full_name=user.full_name,
+                    roles=roles_vm,
+                    is_active=user.is_active,
+                )
         finally:
             db.close()
     return await call_next(request)
