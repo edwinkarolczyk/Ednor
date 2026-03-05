@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 from app.config import SECRET_KEY
 from app.db import User, get_db
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256"],
+    deprecated="auto",
+)
 serializer = URLSafeSerializer(SECRET_KEY, salt="ednor-session")
 SESSION_COOKIE_NAME = "ednor_session"
 
