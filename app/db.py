@@ -175,10 +175,16 @@ class Quote(Base):
     customer_name: Mapped[str] = mapped_column(Text, nullable=False)
     site_address_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
+    accepted_version_id: Mapped[int | None] = mapped_column(ForeignKey("quote_versions.id"), nullable=True, index=True)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    versions: Mapped[list["QuoteVersion"]] = relationship("QuoteVersion", back_populates="quote", cascade="all, delete-orphan")
+    versions: Mapped[list["QuoteVersion"]] = relationship(
+        "QuoteVersion",
+        back_populates="quote",
+        cascade="all, delete-orphan",
+        foreign_keys="QuoteVersion.quote_id",
+    )
     acceptance: Mapped["QuoteAcceptance | None"] = relationship(
         "QuoteAcceptance", back_populates="quote", uselist=False, cascade="all, delete-orphan"
     )
@@ -192,6 +198,7 @@ class QuoteVersion(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     quote_id: Mapped[int] = mapped_column(ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     margin_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     warranty_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     labor_hours_planned: Mapped[float] = mapped_column(Float, nullable=False, default=0)
@@ -207,7 +214,7 @@ class QuoteVersion(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    quote: Mapped[Quote] = relationship("Quote", back_populates="versions")
+    quote: Mapped[Quote] = relationship("Quote", back_populates="versions", foreign_keys=[quote_id])
     lines: Mapped[list[QuoteLine]] = relationship("QuoteLine", back_populates="quote_version", cascade="all, delete-orphan")
 
 
@@ -308,6 +315,8 @@ def init_db(hash_password_fn):
             "deposit_required",
             "materials_check_required",
         },
+        "quotes": {"accepted_version_id"},
+        "quote_versions": {"description"},
         "pricing_quotes": {"use_manual_labor"},
         "quote_lines": {"line_type", "quote_version_id"},
         "fence_quote_inputs": {"created_at"},
