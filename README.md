@@ -1,24 +1,31 @@
-# Ednor — WEB skeleton (Etap 1)
+# Ednor — WEB skeleton (Etap 2)
 
-Minimalna aplikacja demo oparta o **FastAPI** z prostym interfejsem webowym i placeholderami modułów.
+Minimalna aplikacja demo oparta o **FastAPI** z logowaniem, rolami i przypisaniami do zleceń.
 
 ## Uruchomienie na Windows
 
 1. Kliknij dwukrotnie plik `run_dev.bat`.
 2. Skrypt utworzy środowisko `venv`, zainstaluje zależności i uruchomi serwer.
 
-## Adresy
+## Login (demo)
 
-- Lokalnie na komputerze: http://localhost:8000
-- Z telefonu (ta sama sieć Wi‑Fi/LAN): http://IP_KOMPUTERA:8000
+- `admin / admin123`
+- ⚠️ To hasło jest tylko do demo i powinno być zmienione poza środowiskiem testowym.
 
-## Dostępne widoki
+## Role
 
-- `/` — strona główna
-- `/orders` — Zlecenia (placeholder + przycisk Dodaj + prosty upload)
-- `/inventory` — Magazyn (placeholder)
-- `/calendar` — Kalendarz (placeholder)
-- `/api/health` — endpoint zdrowia (`{"status":"ok"}`)
+- Produkcja
+- Monter
+- Serwisant
+- Admin
+
+## Widoki
+
+- `/login`
+- `/my-orders`
+- `/orders` (admin)
+- `/users` (admin)
+- `/me`
 
 ## Upload placeholder
 

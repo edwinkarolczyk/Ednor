@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card">
+    <h1>Użytkownicy</h1>
+    <form method="post" action="/users" class="form-grid">
+        <label>Login<input name="username" required></label>
+        <label>Hasło<input name="password" type="password" required></label>
+        <label>Imię i nazwisko<input name="full_name"></label>
+        <fieldset>
+            <legend>Role</legend>
+            {% for role in roles %}
+                <label><input type="checkbox" name="role_codes" value="{{ role.code }}"> {{ role.name }}</label>
+            {% endfor %}
+        </fieldset>
+        <button type="submit">Dodaj użytkownika</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Lista użytkowników</h2>
+    <ul>
+        {% for user in users %}
+            <li>{{ user.username }} — {{ user.full_name or '-' }}
+                {% for role in user.roles %}<span class="badge">{{ role.code }}</span>{% endfor %}
+            </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}
