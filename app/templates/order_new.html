@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card narrow">
+    <h1>Nowe zlecenie</h1>
+    <form class="form-grid" action="/orders/new" method="post">
+        <label>Tytuł<input name="title" required></label>
+        <label>Klient<input name="client_name"></label>
+        <label>Adres<input name="address"></label>
+        <label>Status<input name="status" value="new"></label>
+        <button type="submit">Zapisz</button>
+    </form>
+</section>
+{% endblock %}

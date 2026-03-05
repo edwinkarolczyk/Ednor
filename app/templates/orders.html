@@ -4,30 +4,29 @@
 <section class="card">
     <div class="row-between">
         <h1>Zlecenia</h1>
-        <button type="button">Dodaj</button>
+        <a class="btn" href="/orders/new">Dodaj zlecenie</a>
     </div>
-
     <table>
         <thead>
         <tr>
-            <th>ID</th>
+            <th>Nr</th>
+            <th>Tytuł</th>
             <th>Klient</th>
             <th>Status</th>
+            <th></th>
         </tr>
         </thead>
         <tbody>
+        {% for order in orders %}
         <tr>
-            <td>001</td>
-            <td>Placeholder Sp. z o.o.</td>
-            <td>Nowe</td>
+            <td>{{ order.order_no }}</td>
+            <td>{{ order.title }}</td>
+            <td>{{ order.client_name or '-' }}</td>
+            <td>{{ order.status }}</td>
+            <td><a href="/orders/{{ order.id }}">Szczegóły</a></td>
         </tr>
+        {% endfor %}
         </tbody>
     </table>
-
-    <form class="upload-form" action="/api/orders/001/upload" method="post" enctype="multipart/form-data">
-        <label for="file">Upload pliku (placeholder):</label>
-        <input id="file" name="file" type="file" required>
-        <button type="submit">Wyślij plik</button>
-    </form>
 </section>
 {% endblock %}

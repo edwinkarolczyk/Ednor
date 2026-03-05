@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card">
+    <h1>Zlecenie #{{ order.order_no }} — {{ order.title }}</h1>
+    <p>Klient: {{ order.client_name or '-' }}</p>
+    <p>Adres: {{ order.address or '-' }}</p>
+    <p>Status: {{ order.status }}</p>
+</section>
+
+<section class="card">
+    <h2>Przypisani pracownicy</h2>
+    {% if is_admin %}
+    <form class="form-grid" method="post" action="/orders/{{ order.id }}/assign">
+        <label>Użytkownik
+            <select name="user_id" required>
+                {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+            </select>
+        </label>
+        <label>Rola
+            <select name="role_code" required>
+                {% for role in roles %}<option value="{{ role.code }}">{{ role.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <label>Notatka<input name="note"></label>
+        <button type="submit">Przypisz</button>
+    </form>
+    {% endif %}
+
+    <ul>
+        {% for a in assignments %}
+            <li>{{ a.user.username }} — {{ a.role_code }} {% if a.note %}({{ a.note }}){% endif %}</li>
+        {% else %}
+            <li>Brak przypisań.</li>
+        {% endfor %}
+    </ul>
+</section>
+
+<section class="card">
+    <h2>Upload (placeholder)</h2>
+    <form class="upload-form" action="/api/orders/{{ order.id }}/upload" method="post" enctype="multipart/form-data">
+        <input name="file" type="file" required>
+        <button type="submit">Wyślij plik</button>
+    </form>
+    <ul>
+        {% for file in attachments %}
+            <li>{{ file.filename }}</li>
+        {% else %}
+            <li>Brak plików.</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}

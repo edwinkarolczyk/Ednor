@@ -3,6 +3,9 @@
 {% block content %}
 <section class="card">
     <h1>Witaj w Ednor</h1>
-    <p>To minimalny szkielet aplikacji WEB. Wybierz moduł z menu.</p>
+    <p>Etap 2 demo: logowanie, role i moje zlecenia.</p>
+    {% if not request.state.current_user %}
+    <a class="btn" href="/login">Zaloguj się</a>
+    {% endif %}
 </section>
 {% endblock %}
