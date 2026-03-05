@@ -3,7 +3,20 @@ from pathlib import Path
 
 import logging
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, func, inspect
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    func,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import DATA_DIR
@@ -284,9 +297,48 @@ def get_db():
         db.close()
 
 
+def _sqlite_columns(conn, table: str) -> set[str]:
+    rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    return {r[1] for r in rows}
+
+
+def _sqlite_add_column(conn, table: str, col: str, coltype: str, default_sql: str | None = None) -> None:
+    sql = f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"
+    if default_sql is not None:
+        sql += f" DEFAULT {default_sql}"
+    conn.execute(text(sql))
+
+
+def _ensure_columns(table: str, cols: list[tuple[str, str, str | None]]) -> None:
+    with engine.begin() as conn:
+        existing = _sqlite_columns(conn, table)
+        for name, coltype, default_sql in cols:
+            if name not in existing:
+                _sqlite_add_column(conn, table, name, coltype, default_sql)
+
+
 def init_db(hash_password_fn):
     logger = logging.getLogger(__name__)
     Base.metadata.create_all(bind=engine)
+
+    # SQLite auto-migrations for columns introduced after initial deployment.
+    _ensure_columns("quotes", [("accepted_version_id", "INTEGER", None)])
+    _ensure_columns("quote_versions", [("description", "TEXT", "''")])
+    _ensure_columns("pricing_quotes", [("use_manual_labor", "BOOLEAN", "0")])
+    _ensure_columns(
+        "quote_lines",
+        [("line_type", "VARCHAR(50)", "'custom'"), ("quote_version_id", "INTEGER", None)],
+    )
+    _ensure_columns("fence_quote_inputs", [("created_at", "DATETIME", "CURRENT_TIMESTAMP")])
+    _ensure_columns(
+        "time_entries",
+        [
+            ("work_type", "VARCHAR(50)", "'installation'"),
+            ("started_at", "DATETIME", None),
+            ("ended_at", "DATETIME", None),
+            ("duration_minutes", "INTEGER", "0"),
+        ],
+    )
 
     inspector = inspect(engine)
     expected_tables = {
@@ -328,11 +380,7 @@ def init_db(hash_password_fn):
         existing = {col["name"] for col in inspector.get_columns(table_name)}
         missing_columns = columns.difference(existing)
         if missing_columns:
-            logger.error(
-                "Tabela '%s' nie zawiera wymaganych kolumn (%s). Bez Alembic nie wykonujemy ALTER TABLE.",
-                table_name,
-                ", ".join(sorted(missing_columns)),
-            )
+            logger.error("Tabela '%s' nie zawiera wymaganych kolumn (%s).", table_name, ", ".join(sorted(missing_columns)))
 
     from sqlalchemy import select
 
