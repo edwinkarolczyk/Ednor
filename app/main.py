@@ -14,6 +14,7 @@ from app.api.orders import router as orders_router
 from app.api.orders import set_templates as orders_set_templates
 from app.api.pricing import router as pricing_router
 from app.api.pricing import set_templates as pricing_set_templates
+from app.api.time import router as time_router
 from app.api.users import router as users_router
 from app.api.users import set_templates as users_set_templates
 from app.db import SessionLocal, User, init_db
@@ -65,6 +66,7 @@ app.include_router(auth_router)
 app.include_router(orders_router)
 app.include_router(pricing_router)
 app.include_router(users_router)
+app.include_router(time_router)
 
 
 @app.get("/", response_class=HTMLResponse)

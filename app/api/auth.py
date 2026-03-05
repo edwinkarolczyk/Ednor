@@ -1,10 +1,12 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db import User, get_db
+from app.db import TimeEntry, User, get_db
 from app.security import (
     SESSION_COOKIE_NAME,
     create_session_token,
@@ -53,5 +55,31 @@ def logout():
 
 
 @router.get("/me")
-def me(request: Request, _: User = Depends(get_current_user)):
-    return templates.TemplateResponse("me.html", {"request": request, "page_title": "Profil", "current_user": request.state.current_user})
+def me(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    since_30d = now - timedelta(days=30)
+
+    total_minutes = db.scalar(
+        select(func.coalesce(func.sum(TimeEntry.duration_minutes), 0)).where(
+            TimeEntry.user_id == current_user.id,
+            TimeEntry.work_type == "installation",
+        )
+    )
+    total_minutes_30d = db.scalar(
+        select(func.coalesce(func.sum(TimeEntry.duration_minutes), 0)).where(
+            TimeEntry.user_id == current_user.id,
+            TimeEntry.work_type == "installation",
+            TimeEntry.started_at >= since_30d,
+        )
+    )
+
+    return templates.TemplateResponse(
+        "me.html",
+        {
+            "request": request,
+            "page_title": "Profil",
+            "current_user": request.state.current_user,
+            "installation_minutes_total": int(total_minutes or 0),
+            "installation_minutes_30d": int(total_minutes_30d or 0),
+        },
+    )

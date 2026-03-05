@@ -34,3 +34,5 @@ th, td { border-bottom: 1px solid var(--border); text-align: left; padding: .75r
     table { font-size: .9rem; }
     button, .btn { width: 100%; text-align: center; }
 }
+
+.time-actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }

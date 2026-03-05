@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import UPLOADS_DIR
-from app.db import Attachment, Order, OrderAssignment, PricingQuote, Role, User, get_db
+from app.db import Attachment, Order, OrderAssignment, PricingQuote, Role, TimeEntry, User, get_db
 from app.security import get_current_user
 
 router = APIRouter(tags=["orders"])
@@ -19,6 +19,11 @@ def set_templates(templates_obj: Jinja2Templates):
 
 def _is_admin(user: User) -> bool:
     return "admin" in {role.code for role in user.roles}
+
+
+def _is_installer_or_admin(user: User) -> bool:
+    role_codes = {role.code for role in user.roles}
+    return "admin" in role_codes or "installer" in role_codes
 
 
 def _next_order_no(db: Session) -> int:
@@ -128,6 +133,13 @@ def order_detail(
     latest_quote = db.scalar(
         select(PricingQuote).where(PricingQuote.order_id == order_id).order_by(PricingQuote.version_no.desc()).limit(1)
     )
+    latest_time_entries = db.scalars(
+        select(TimeEntry)
+        .options(joinedload(TimeEntry.user))
+        .where(TimeEntry.order_id == order_id, TimeEntry.work_type == "installation")
+        .order_by(TimeEntry.started_at.desc())
+        .limit(10)
+    ).all()
     return templates.TemplateResponse(
         "order_detail.html",
         {
@@ -140,6 +152,8 @@ def order_detail(
             "attachments": attachments,
             "latest_quote": latest_quote,
             "is_admin": _is_admin(current_user),
+            "can_track_installation_time": _is_installer_or_admin(current_user),
+            "latest_time_entries": latest_time_entries,
             "current_user": request.state.current_user,
         },
     )

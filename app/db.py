@@ -38,6 +38,7 @@ class User(Base):
 
     roles: Mapped[list["Role"]] = relationship("Role", secondary="user_roles", back_populates="users")
     assignments: Mapped[list["OrderAssignment"]] = relationship("OrderAssignment", back_populates="user")
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="user")
 
 
 class Role(Base):
@@ -64,6 +65,23 @@ class Order(Base):
     assignments: Mapped[list["OrderAssignment"]] = relationship("OrderAssignment", back_populates="order")
     attachments: Mapped[list["Attachment"]] = relationship("Attachment", back_populates="order")
     pricing_quotes: Mapped[list["PricingQuote"]] = relationship("PricingQuote", back_populates="order")
+    time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="order")
+
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    work_type: Mapped[str] = mapped_column(String(50), nullable=False, default="installation", index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    order: Mapped[Order] = relationship("Order", back_populates="time_entries")
+    user: Mapped[User] = relationship("User", back_populates="time_entries")
 
 
 class OrderAssignment(Base):
@@ -182,6 +200,7 @@ def init_db(hash_password_fn):
         "quote_lines",
         "fence_templates",
         "fence_quote_inputs",
+        "time_entries",
     }
     missing_tables = expected_tables.difference(set(inspector.get_table_names()))
     if missing_tables:
@@ -191,6 +210,7 @@ def init_db(hash_password_fn):
         "orders": {"status", "client_name", "address"},
         "pricing_quotes": {"use_manual_labor"},
         "fence_quote_inputs": {"created_at"},
+        "time_entries": {"work_type", "started_at", "ended_at", "duration_minutes"},
     }
     for table_name, columns in expected_columns.items():
         if table_name not in inspector.get_table_names():

@@ -14,6 +14,45 @@
     </p>
 </section>
 
+{% if can_track_installation_time %}
+<section class="card" data-time-tracker data-order-id="{{ order.id }}">
+    <h2>Montaż – czas pracy</h2>
+    <div class="time-actions">
+        <button type="button" class="btn" data-time-start>START</button>
+        <button type="button" class="btn" data-time-stop hidden>STOP</button>
+        <span class="badge" data-time-running-status>STOPPED</span>
+    </div>
+    <p>Twój czas montażu: <strong data-user-total>0h 0m</strong></p>
+    <p>Łącznie montaż: <strong data-order-total>0h 0m</strong></p>
+
+    <h3>Ostatnie wpisy czasu</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Start</th>
+                <th>Stop</th>
+                <th>Minuty</th>
+                <th>Pracownik</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in latest_time_entries %}
+                <tr>
+                    <td>{{ entry.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{% if entry.ended_at %}{{ entry.ended_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
+                    <td>{{ entry.duration_minutes }}</td>
+                    <td>{{ entry.user.username }}</td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td colspan="4">Brak wpisów czasu.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
 <section class="card">
     <h2>Przypisani pracownicy</h2>
     {% if is_admin %}

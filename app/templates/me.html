@@ -10,5 +10,7 @@
             <span class="badge">{{ role.name }}</span>
         {% endfor %}
     </p>
+    <p><strong>Mój czas montażu (ostatnie 30 dni):</strong> {{ '%.2f'|format((installation_minutes_30d or 0) / 60) }}h</p>
+    <p><strong>Mój czas montażu łącznie:</strong> {{ '%.2f'|format((installation_minutes_total or 0) / 60) }}h</p>
 </section>
 {% endblock %}
