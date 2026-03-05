@@ -2,12 +2,55 @@
 
 {% block content %}
 
-<h2>Wycena {{ quote.id }}</h2>
+<h2>Wycena {{ quote.quote_no }}</h2>
 
 <p>Klient: {{ quote.customer_name }}</p>
 <p>Adres: {{ quote.site_address_text }}</p>
 <p>Status: {{ quote.status }}</p>
 
-<a href="/quotes">← wróć</a>
+<p>
+    <a href="/quotes/{{ quote.id }}/history">Historia wersji</a>
+</p>
+
+<h3>Wersje wyceny</h3>
+<table>
+    <tr>
+        <th>Wersja</th>
+        <th>Opis</th>
+        <th>Cena netto</th>
+        <th></th>
+    </tr>
+    {% for v in quote.versions %}
+    <tr>
+        <td>{{ v.version_no }}</td>
+        <td>{{ v.description or '-' }}</td>
+        <td>{{ '%.2f'|format(v.total_net) }}</td>
+        <td>
+            <form method="post" action="/quotes/{{ quote.id }}/accept/{{ v.id }}">
+                <button type="submit">Akceptuj</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h3>Dodaj wersję</h3>
+<form method="post" action="/quotes/{{ quote.id }}/version">
+    <label>Opis</label>
+    <input name="description">
+
+    <label>Cena netto</label>
+    <input name="total_net" type="number" step="0.01" min="0">
+
+    <button type="submit">Dodaj</button>
+</form>
+
+{% if quote.status == "accepted" %}
+<form method="post" action="/quotes/{{ quote.id }}/create-order">
+    <button type="submit">Utwórz zlecenie</button>
+</form>
+{% endif %}
+
+<p><a href="/quotes">← wróć</a></p>
 
 {% endblock %}

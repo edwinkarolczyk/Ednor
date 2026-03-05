@@ -230,6 +230,7 @@ def quote_pricing_submit(
     installation_cost: str = Form("0"),
     service_cost: str = Form("0"),
     notes: str = Form(""),
+    description: str = Form(""),
     fence_template_id: str = Form(""),
     length_m: str = Form("0"),
     height_m: str = Form("0"),
@@ -317,6 +318,7 @@ def quote_pricing_submit(
         subtotal_net=subtotal,
         total_net=total,
         notes=notes or None,
+        description=description or None,
     )
     db.add(quote_version)
     db.flush()
@@ -356,6 +358,66 @@ def quote_history(quote_id: int, request: Request, db: Session = Depends(get_db)
             "current_user": request.state.current_user,
         },
     )
+
+
+@router.post("/quotes/{quote_id}/version")
+def quote_add_version(
+    quote_id: int,
+    description: str = Form(""),
+    total_net: float = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    quote = db.get(Quote, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404)
+
+    version_no = (db.scalar(select(func.max(QuoteVersion.version_no)).where(QuoteVersion.quote_id == quote_id)) or 0) + 1
+
+    version = QuoteVersion(
+        quote_id=quote_id,
+        version_no=version_no,
+        description=description or None,
+        total_net=total_net,
+        subtotal_net=total_net,
+    )
+
+    db.add(version)
+    db.commit()
+
+    return RedirectResponse(f"/quotes/{quote_id}", status_code=303)
+
+
+@router.post("/quotes/{quote_id}/accept/{version_id}")
+def quote_accept_version(
+    quote_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    quote = db.get(Quote, quote_id)
+    if not quote:
+        raise HTTPException(status_code=404)
+
+    version = db.scalar(select(QuoteVersion).where(QuoteVersion.id == version_id, QuoteVersion.quote_id == quote_id))
+    if not version:
+        raise HTTPException(status_code=404, detail="Wersja wyceny nie istnieje")
+
+    quote.status = "accepted"
+    quote.accepted_version_id = version_id
+
+    existing = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
+    if existing:
+        existing.accepted_version_id = version_id
+        existing.accepted_at = datetime.utcnow()
+    else:
+        db.add(QuoteAcceptance(quote_id=quote_id, accepted_version_id=version_id))
+
+    db.commit()
+
+    return RedirectResponse(f"/quotes/{quote_id}", status_code=303)
 
 
 @router.post("/quotes/{quote_id}/send")
@@ -404,6 +466,7 @@ def quote_accept(
             )
         )
     quote.status = "accepted"
+    quote.accepted_version_id = accepted_version.id
     db.commit()
     return RedirectResponse(url=f"/quotes/{quote_id}", status_code=303)
 
@@ -433,9 +496,12 @@ def quote_create_order(
     if quote.status != "accepted":
         raise HTTPException(status_code=400, detail="Wycena nie jest zaakceptowana")
 
-    acceptance = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
-    if not acceptance:
-        raise HTTPException(status_code=400, detail="Brak rekordu akceptacji")
+    accepted_version_id = quote.accepted_version_id
+    if not accepted_version_id:
+        acceptance = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
+        if not acceptance:
+            raise HTTPException(status_code=400, detail="Brak rekordu akceptacji")
+        accepted_version_id = acceptance.accepted_version_id
 
     order = Order(
         order_no=_next_order_no(db),
@@ -444,7 +510,7 @@ def quote_create_order(
         address=quote.site_address_text,
         status="awaiting_deposit",
         source_quote_id=quote.id,
-        accepted_quote_version_id=acceptance.accepted_version_id,
+        accepted_quote_version_id=accepted_version_id,
         deposit_required=True,
         materials_check_required=True,
     )
