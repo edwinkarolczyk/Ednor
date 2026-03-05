@@ -53,5 +53,5 @@ def logout():
 
 
 @router.get("/me")
-def me(request: Request, user: User = Depends(get_current_user)):
-    return templates.TemplateResponse("me.html", {"request": request, "page_title": "Profil", "current_user": user})
+def me(request: Request, _: User = Depends(get_current_user)):
+    return templates.TemplateResponse("me.html", {"request": request, "page_title": "Profil", "current_user": request.state.current_user})
