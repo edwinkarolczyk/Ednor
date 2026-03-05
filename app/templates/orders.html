@@ -22,7 +22,15 @@
             <td>{{ order.order_no }}</td>
             <td>{{ order.title }}</td>
             <td>{{ order.client_name or '-' }}</td>
-            <td>{{ order.status }}</td>
+            <td>
+                {% if order.status == "priced" %}
+                    <span class="badge">Wycena gotowa</span>
+                {% elif order.status == "draft" %}
+                    <span class="badge">Szkic</span>
+                {% else %}
+                    {{ order.status }}
+                {% endif %}
+            </td>
             <td><a href="/orders/{{ order.id }}">Szczegóły</a></td>
         </tr>
         {% endfor %}

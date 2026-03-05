@@ -1,19 +1,27 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<section class="card">
+<section class="card table-wrap">
     <h1>Historia wycen dla zlecenia #{{ order.order_no }}</h1>
     <p><a href="/orders/{{ order.id }}/pricing">Nowa wycena</a></p>
-    <ul>
+    <table>
+        <thead>
+        <tr><th>Wersja</th><th>Data</th><th>Subtotal</th><th>Total</th><th>PDF</th><th>Podgląd</th></tr>
+        </thead>
+        <tbody>
         {% for quote in quotes %}
-            <li>
-                Wersja {{ quote.version_no }} | subtotal: {{ '%.2f'|format(quote.subtotal_net) }} zł |
-                total: {{ '%.2f'|format(quote.total_net) }} zł |
-                <a href="/pricing/{{ quote.id }}/pdf">PDF</a>
-            </li>
+        <tr>
+            <td>v{{ quote.version_no }}</td>
+            <td>{{ quote.created_at.strftime('%Y-%m-%d %H:%M') if quote.created_at else '-' }}</td>
+            <td>{{ '%.2f'|format(quote.subtotal_net) }} zł</td>
+            <td>{{ '%.2f'|format(quote.total_net) }} zł</td>
+            <td><a href="/pricing/{{ quote.id }}/pdf">PDF</a></td>
+            <td><a href="/orders/{{ order.id }}/pricing?view={{ quote.id }}">Podgląd</a></td>
+        </tr>
         {% else %}
-            <li>Brak wycen.</li>
+        <tr><td colspan="6">Brak wycen.</td></tr>
         {% endfor %}
-    </ul>
+        </tbody>
+    </table>
 </section>
 {% endblock %}

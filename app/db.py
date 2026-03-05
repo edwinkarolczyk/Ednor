@@ -1,7 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func
+import logging
+
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func, inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import DATA_DIR
@@ -56,7 +58,7 @@ class Order(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(80), nullable=False, default="new")
+    status: Mapped[str] = mapped_column(String(80), nullable=False, default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     assignments: Mapped[list["OrderAssignment"]] = relationship("OrderAssignment", back_populates="order")
@@ -68,7 +70,7 @@ class OrderAssignment(Base):
     __tablename__ = "order_assignments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     role_code: Mapped[str] = mapped_column(String(50), nullable=False)
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -94,11 +96,12 @@ class PricingQuote(Base):
     __tablename__ = "pricing_quotes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     margin_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     labor_hours_planned: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     labor_hours_manual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    use_manual_labor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     labor_rate_per_h: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     power_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     power_rate_per_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0)
@@ -121,7 +124,7 @@ class QuoteLine(Base):
     __tablename__ = "quote_lines"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id"), nullable=False, index=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
@@ -146,7 +149,7 @@ class FenceQuoteInput(Base):
     __tablename__ = "fence_quote_inputs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id"), nullable=False, index=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id", ondelete="CASCADE"), nullable=False, index=True)
     template_id: Mapped[int] = mapped_column(ForeignKey("fence_templates.id"), nullable=False, index=True)
     length_m: Mapped[float] = mapped_column(Float, nullable=False)
     height_m: Mapped[float] = mapped_column(Float, nullable=False)
@@ -154,6 +157,7 @@ class FenceQuoteInput(Base):
     gates_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     wickets_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rounding_mode: Mapped[str] = mapped_column(String(50), nullable=False, default="ceil_0_1")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     quote: Mapped[PricingQuote] = relationship("PricingQuote", back_populates="fence_input")
     template: Mapped[FenceTemplate] = relationship("FenceTemplate", back_populates="fence_inputs")
@@ -168,7 +172,37 @@ def get_db():
 
 
 def init_db(hash_password_fn):
+    logger = logging.getLogger(__name__)
     Base.metadata.create_all(bind=engine)
+
+    inspector = inspect(engine)
+    expected_tables = {
+        "orders",
+        "pricing_quotes",
+        "quote_lines",
+        "fence_templates",
+        "fence_quote_inputs",
+    }
+    missing_tables = expected_tables.difference(set(inspector.get_table_names()))
+    if missing_tables:
+        logger.error("Brakuje tabel po create_all: %s", ", ".join(sorted(missing_tables)))
+
+    expected_columns = {
+        "orders": {"status", "client_name", "address"},
+        "pricing_quotes": {"use_manual_labor"},
+        "fence_quote_inputs": {"created_at"},
+    }
+    for table_name, columns in expected_columns.items():
+        if table_name not in inspector.get_table_names():
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table_name)}
+        missing_columns = columns.difference(existing)
+        if missing_columns:
+            logger.error(
+                "Tabela '%s' nie zawiera wymaganych kolumn (%s). Bez Alembic nie wykonujemy ALTER TABLE.",
+                table_name,
+                ", ".join(sorted(missing_columns)),
+            )
 
     from sqlalchemy import select
 
@@ -201,7 +235,7 @@ def init_db(hash_password_fn):
 
         basic_template = db.scalar(select(FenceTemplate).where(FenceTemplate.code == "BASIC"))
         if not basic_template:
-            db.add(FenceTemplate(code="BASIC", name="Ogrodzenie - podstawowe", is_active=True))
+            db.add(FenceTemplate(code="BASIC", name="Ogrodzenie podstawowe (2 profile poziome)", is_active=True))
             db.commit()
     finally:
         db.close()

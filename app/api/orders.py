@@ -78,7 +78,7 @@ def create_order(
     title: str = Form(...),
     client_name: str = Form(""),
     address: str = Form(""),
-    status: str = Form("new"),
+    status: str = Form("draft"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
