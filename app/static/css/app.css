@@ -16,7 +16,9 @@ body { margin: 0; font-family: Arial, sans-serif; color: var(--text); background
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
 .form-grid { display: grid; gap: .75rem; }
-.form-grid input, .form-grid select { width: 100%; padding: .6rem; border: 1px solid var(--border); border-radius: 8px; }
+.form-grid input, .form-grid select, .form-grid textarea { width: 100%; padding: .6rem; border: 1px solid var(--border); border-radius: 8px; }
+.form-grid textarea { min-height: 90px; resize: vertical; }
+.table-wrap { overflow-x: auto; }
 button, .btn { background: var(--accent); color: white; border: 0; border-radius: 10px; padding: .7rem 1rem; cursor: pointer; text-decoration: none; display: inline-block; font-weight: 700; }
 table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
 th, td { border-bottom: 1px solid var(--border); text-align: left; padding: .75rem .5rem; }
