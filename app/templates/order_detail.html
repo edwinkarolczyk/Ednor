@@ -6,6 +6,10 @@
     <p>Klient: {{ order.client_name or '-' }}</p>
     <p>Adres: {{ order.address or '-' }}</p>
     <p>Status: {{ order.status }}</p>
+
+    {% if order.source_quote_id %}
+    <p>Źródło: wycena #{{ order.source_quote_id }}{% if order.accepted_quote_version_id %} (wersja ID {{ order.accepted_quote_version_id }}){% endif %}</p>
+    {% endif %}
     <h3>Wycena</h3>
     <p>
         <a href="/orders/{{ order.id }}/pricing">Przejdź do wyceny</a> |
@@ -52,6 +56,34 @@
     </table>
 </section>
 {% endif %}
+
+
+<section class="card">
+    <h2>Płatności</h2>
+    <p>Etap 3.6: po opłaceniu zaliczki zlecenie przechodzi do statusu <strong>awaiting_materials</strong> (bramka magazynu w Etapie 4).</p>
+    <table>
+        <thead><tr><th>Typ</th><th>Kwota</th><th>Status</th><th>Data opłaty</th><th></th></tr></thead>
+        <tbody>
+        {% for payment in payments %}
+            <tr>
+                <td>{{ payment.payment_type }}</td>
+                <td>{{ '%.2f'|format(payment.amount) }} zł</td>
+                <td>{{ payment.status }}</td>
+                <td>{% if payment.paid_at %}{{ payment.paid_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
+                <td>
+                    {% if is_admin and payment.status != 'paid' %}
+                    <form method="post" action="/orders/{{ order.id }}/payments/{{ payment.id }}/mark-paid">
+                        <button type="submit">Oznacz jako opłacone</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="5">Brak płatności.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
 
 <section class="card">
     <h2>Przypisani pracownicy</h2>

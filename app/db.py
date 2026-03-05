@@ -3,7 +3,7 @@ from pathlib import Path
 
 import logging
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func, inspect
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, func, inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.config import DATA_DIR
@@ -60,12 +60,20 @@ class Order(Base):
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(80), nullable=False, default="draft")
+    source_quote_id: Mapped[int | None] = mapped_column(ForeignKey("quotes.id"), nullable=True, index=True)
+    accepted_quote_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quote_versions.id"), nullable=True, index=True
+    )
+    deposit_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    materials_check_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     assignments: Mapped[list["OrderAssignment"]] = relationship("OrderAssignment", back_populates="order")
     attachments: Mapped[list["Attachment"]] = relationship("Attachment", back_populates="order")
     pricing_quotes: Mapped[list["PricingQuote"]] = relationship("PricingQuote", back_populates="order")
     time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="order")
+    payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
+    source_quote: Mapped["Quote | None"] = relationship("Quote", back_populates="orders", foreign_keys=[source_quote_id])
 
 
 class TimeEntry(Base):
@@ -142,7 +150,13 @@ class QuoteLine(Base):
     __tablename__ = "quote_lines"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    quote_id: Mapped[int] = mapped_column(ForeignKey("pricing_quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+    quote_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pricing_quotes.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    quote_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quote_versions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    line_type: Mapped[str] = mapped_column(String(50), nullable=False, default="custom")
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
@@ -150,6 +164,80 @@ class QuoteLine(Base):
     total_price: Mapped[float] = mapped_column(Float, nullable=False)
 
     quote: Mapped[PricingQuote] = relationship("PricingQuote", back_populates="lines")
+    quote_version: Mapped["QuoteVersion | None"] = relationship("QuoteVersion", back_populates="lines")
+
+
+class Quote(Base):
+    __tablename__ = "quotes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_no: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    customer_name: Mapped[str] = mapped_column(Text, nullable=False)
+    site_address_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    versions: Mapped[list["QuoteVersion"]] = relationship("QuoteVersion", back_populates="quote", cascade="all, delete-orphan")
+    acceptance: Mapped["QuoteAcceptance | None"] = relationship(
+        "QuoteAcceptance", back_populates="quote", uselist=False, cascade="all, delete-orphan"
+    )
+    orders: Mapped[list[Order]] = relationship("Order", back_populates="source_quote", foreign_keys=[Order.source_quote_id])
+
+
+class QuoteVersion(Base):
+    __tablename__ = "quote_versions"
+    __table_args__ = (UniqueConstraint("quote_id", "version_no", name="uq_quote_versions_quote_id_version_no"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    margin_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    warranty_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    labor_hours_planned: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    labor_hours_manual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    use_manual_labor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    labor_rate_per_h: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    power_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    power_rate_per_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    installation_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    service_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    subtotal_net: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    total_net: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    quote: Mapped[Quote] = relationship("Quote", back_populates="versions")
+    lines: Mapped[list[QuoteLine]] = relationship("QuoteLine", back_populates="quote_version", cascade="all, delete-orphan")
+
+
+class QuoteAcceptance(Base):
+    __tablename__ = "quote_acceptance"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("quotes.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    accepted_version_id: Mapped[int] = mapped_column(ForeignKey("quote_versions.id"), nullable=False, index=True)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    accepted_by_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    quote: Mapped[Quote] = relationship("Quote", back_populates="acceptance")
+    accepted_version: Mapped[QuoteVersion] = relationship("QuoteVersion")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    payment_type: Mapped[str] = mapped_column(String(50), nullable=False, default="other")
+    amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="planned")
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    order: Mapped[Order] = relationship("Order", back_populates="payments")
 
 
 class FenceTemplate(Base):
@@ -196,6 +284,10 @@ def init_db(hash_password_fn):
     inspector = inspect(engine)
     expected_tables = {
         "orders",
+        "quotes",
+        "quote_versions",
+        "quote_acceptance",
+        "payments",
         "pricing_quotes",
         "quote_lines",
         "fence_templates",
@@ -207,8 +299,17 @@ def init_db(hash_password_fn):
         logger.error("Brakuje tabel po create_all: %s", ", ".join(sorted(missing_tables)))
 
     expected_columns = {
-        "orders": {"status", "client_name", "address"},
+        "orders": {
+            "status",
+            "client_name",
+            "address",
+            "source_quote_id",
+            "accepted_quote_version_id",
+            "deposit_required",
+            "materials_check_required",
+        },
         "pricing_quotes": {"use_manual_labor"},
+        "quote_lines": {"line_type", "quote_version_id"},
         "fence_quote_inputs": {"created_at"},
         "time_entries": {"work_type", "started_at", "ended_at", "duration_minutes"},
     }

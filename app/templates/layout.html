@@ -18,6 +18,7 @@
             {% set role_codes = request.state.current_user.roles | map(attribute='code') | list %}
             {% if 'admin' in role_codes %}
                 <a href="/orders">Zlecenia</a>
+                <a href="/quotes">Wyceny</a>
                 <a href="/users">Użytkownicy</a>
             {% endif %}
             <a href="/me">Profil</a>

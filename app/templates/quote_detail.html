@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+
+{% block content %}
+{% if quote %}
+<section class="card">
+    <h1>Wycena {{ quote.quote_no }}</h1>
+    <p>Klient: {{ quote.customer_name }}</p>
+    <p>Adres: {{ quote.site_address_text or '-' }}</p>
+    <p>Status: <strong>{{ quote.status }}</strong></p>
+    <p>Ostatnia suma: {% if latest_version %}<strong>{{ '%.2f'|format(latest_version.total_net) }} zł</strong>{% else %}-{% endif %}</p>
+    <p>
+        <a href="/quotes/{{ quote.id }}/pricing">Edytuj wycenę</a> |
+        <a href="/quotes/{{ quote.id }}/history">Historia wersji</a>
+    </p>
+</section>
+
+<section class="card">
+    <h2>Akcje</h2>
+    {% if quote.status == 'draft' %}
+        <form method="post" action="/quotes/{{ quote.id }}/send"><button type="submit">Wyślij</button></form>
+    {% elif quote.status == 'sent' %}
+        <form class="form-grid" method="post" action="/quotes/{{ quote.id }}/accept">
+            <label>Kto akceptuje<input name="accepted_by_name"></label>
+            <label>Notatka<textarea name="note"></textarea></label>
+            <button type="submit">Zaakceptuj</button>
+        </form>
+        <form method="post" action="/quotes/{{ quote.id }}/reject"><button type="submit">Odrzuć</button></form>
+    {% elif quote.status == 'accepted' %}
+        <form class="form-grid" method="post" action="/quotes/{{ quote.id }}/create-order">
+            <label>Kwota zaliczki<input type="number" step="0.01" name="deposit_amount" required></label>
+            <button type="submit">Utwórz zlecenie</button>
+        </form>
+        {% if acceptance %}
+            <p>Zaakceptowano: {{ acceptance.accepted_at.strftime('%Y-%m-%d %H:%M') }}{% if acceptance.accepted_by_name %} przez {{ acceptance.accepted_by_name }}{% endif %}</p>
+        {% endif %}
+    {% endif %}
+</section>
+{% else %}
+<section class="card">
+    <h1>Nowa wycena</h1>
+    <form class="form-grid" method="post" action="/quotes/new">
+        <label>Nazwa klienta<input name="customer_name" required></label>
+        <label>Adres inwestycji<textarea name="site_address_text"></textarea></label>
+        <button type="submit">Utwórz i przejdź do wyceny</button>
+    </form>
+</section>
+{% endif %}
+{% endblock %}
