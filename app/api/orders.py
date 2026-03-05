@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -7,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import UPLOADS_DIR
-from app.db import Attachment, Order, OrderAssignment, PricingQuote, Role, TimeEntry, User, get_db
+from app.db import Attachment, Order, OrderAssignment, Payment, PricingQuote, Role, TimeEntry, User, get_db
 from app.security import get_current_user
 
 router = APIRouter(tags=["orders"])
@@ -133,6 +134,7 @@ def order_detail(
     latest_quote = db.scalar(
         select(PricingQuote).where(PricingQuote.order_id == order_id).order_by(PricingQuote.version_no.desc()).limit(1)
     )
+    payments = db.scalars(select(Payment).where(Payment.order_id == order_id).order_by(Payment.created_at.desc())).all()
     latest_time_entries = db.scalars(
         select(TimeEntry)
         .options(joinedload(TimeEntry.user))
@@ -154,6 +156,7 @@ def order_detail(
             "is_admin": _is_admin(current_user),
             "can_track_installation_time": _is_installer_or_admin(current_user),
             "latest_time_entries": latest_time_entries,
+            "payments": payments,
             "current_user": request.state.current_user,
         },
     )
@@ -172,6 +175,36 @@ def assign_user(
         raise HTTPException(status_code=403)
     assignment = OrderAssignment(order_id=order_id, user_id=user_id, role_code=role_code, note=note or None)
     db.add(assignment)
+    db.commit()
+    return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
+
+
+
+
+@router.post("/orders/{order_id}/payments/{payment_id}/mark-paid")
+def mark_payment_paid(
+    order_id: int,
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin(current_user):
+        raise HTTPException(status_code=403)
+
+    payment = db.scalar(select(Payment).where(Payment.id == payment_id, Payment.order_id == order_id))
+    order = db.get(Order, order_id)
+    if not payment or not order:
+        raise HTTPException(status_code=404)
+
+    payment.status = "paid"
+    payment.paid_at = datetime.utcnow()
+
+    if payment.payment_type == "deposit":
+        if order.materials_check_required:
+            order.status = "awaiting_materials"
+        else:
+            order.status = "ready_for_production"
+
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
 

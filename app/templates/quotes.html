@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card">
+    <div class="row-between">
+        <h1>Wyceny</h1>
+        <a class="btn" href="/quotes/new">Nowa wycena</a>
+    </div>
+    <table>
+        <thead><tr><th>Nr</th><th>Klient</th><th>Status</th><th>Ostatnia suma</th><th></th></tr></thead>
+        <tbody>
+        {% for row in rows %}
+            <tr>
+                <td>{{ row.quote.quote_no }}</td>
+                <td>{{ row.quote.customer_name }}</td>
+                <td>{{ row.quote.status }}</td>
+                <td>{% if row.latest_version %}{{ '%.2f'|format(row.latest_version.total_net) }} zł{% else %}-{% endif %}</td>
+                <td><a href="/quotes/{{ row.quote.id }}">Szczegóły</a></td>
+            </tr>
+        {% else %}
+            <tr><td colspan="5">Brak wycen.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

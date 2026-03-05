@@ -10,6 +10,10 @@ def build_quote_pdf(order, quote, lines) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
+    doc_no = getattr(order, "order_no", None) or getattr(order, "quote_no", "-")
+    client_name = getattr(order, "client_name", None) or getattr(order, "customer_name", None)
+    address = getattr(order, "address", None) or getattr(order, "site_address_text", None)
+
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -20,11 +24,11 @@ def build_quote_pdf(order, quote, lines) -> bytes:
 
     pdf.setFont("Helvetica", 11)
     y -= 28
-    pdf.drawString(40, y, f"Nr zlecenia: {order.order_no}")
+    pdf.drawString(40, y, f"Dokument: {doc_no} / v{quote.version_no}")
     y -= 16
-    pdf.drawString(40, y, f"Klient: {_safe(order.client_name)}")
+    pdf.drawString(40, y, f"Klient: {_safe(client_name)}")
     y -= 16
-    pdf.drawString(40, y, f"Adres: {_safe(order.address)}")
+    pdf.drawString(40, y, f"Adres: {_safe(address)}")
 
     y -= 28
     pdf.setFont("Helvetica-Bold", 10)
