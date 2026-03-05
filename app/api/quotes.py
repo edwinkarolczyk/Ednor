@@ -123,18 +123,11 @@ def _next_order_no(db: Session) -> int:
 def quotes_page(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
 
-    quotes = db.scalars(
-        select(Quote).options(joinedload(Quote.versions), joinedload(Quote.acceptance)).order_by(Quote.created_at.desc())
-    ).unique().all()
-
-    rows = []
-    for quote in quotes:
-        latest_version = max(quote.versions, key=lambda v: v.version_no, default=None)
-        rows.append({"quote": quote, "latest_version": latest_version})
+    quotes = db.scalars(select(Quote).order_by(Quote.id.desc())).all()
 
     return templates.TemplateResponse(
         "quotes.html",
-        {"request": request, "page_title": "Wyceny", "rows": rows, "current_user": request.state.current_user},
+        {"request": request, "page_title": "Wyceny", "quotes": quotes, "current_user": request.state.current_user},
     )
 
 
@@ -142,13 +135,10 @@ def quotes_page(request: Request, db: Session = Depends(get_db), current_user: U
 def new_quote_form(request: Request, current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
     return templates.TemplateResponse(
-        "quote_detail.html",
+        "quote_new.html",
         {
             "request": request,
             "page_title": "Nowa wycena",
-            "quote": None,
-            "latest_version": None,
-            "acceptance": None,
             "current_user": request.state.current_user,
         },
     )
@@ -157,7 +147,7 @@ def new_quote_form(request: Request, current_user: User = Depends(get_current_us
 @router.post("/quotes/new")
 def create_quote(
     customer_name: str = Form(...),
-    site_address_text: str = Form(""),
+    site_address: str = Form(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -166,35 +156,30 @@ def create_quote(
     quote = Quote(
         quote_no=_next_quote_no(db),
         customer_name=customer_name,
-        site_address_text=site_address_text or None,
+        site_address_text=site_address or None,
         status="draft",
         created_by_user_id=current_user.id,
     )
     db.add(quote)
     db.flush()
 
-    db.add(QuoteVersion(quote_id=quote.id, version_no=1))
     db.commit()
-    return RedirectResponse(url=f"/quotes/{quote.id}/pricing", status_code=303)
+    return RedirectResponse(url=f"/quotes/{quote.id}", status_code=303)
 
 
 @router.get("/quotes/{quote_id}")
 def quote_detail(quote_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
-    quote = db.scalar(
-        select(Quote).options(joinedload(Quote.versions), joinedload(Quote.acceptance)).where(Quote.id == quote_id)
-    )
+    quote = db.get(Quote, quote_id)
     if not quote:
         raise HTTPException(status_code=404)
-    latest_version = max(quote.versions, key=lambda v: v.version_no, default=None)
+
     return templates.TemplateResponse(
         "quote_detail.html",
         {
             "request": request,
-            "page_title": f"Wycena {quote.quote_no}",
+            "page_title": "Wycena",
             "quote": quote,
-            "latest_version": latest_version,
-            "acceptance": quote.acceptance,
             "current_user": request.state.current_user,
         },
     )
