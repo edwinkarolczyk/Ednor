@@ -7,6 +7,9 @@
 <p>Klient: {{ quote.customer_name }}</p>
 <p>Adres: {{ quote.site_address_text }}</p>
 <p>Status: {{ quote.status }}</p>
+{% if quote.acceptance %}
+<p>Zaakceptowana wersja: <strong>{{ quote.acceptance.accepted_version.version_no }}</strong></p>
+{% endif %}
 
 <p>
     <a href="/quotes/{{ quote.id }}/history">Historia wersji</a>
@@ -34,16 +37,9 @@
     {% endfor %}
 </table>
 
-<h3>Dodaj wersję</h3>
-<form method="post" action="/quotes/{{ quote.id }}/version">
-    <label>Opis</label>
-    <input name="description">
-
-    <label>Cena netto</label>
-    <input name="total_net" type="number" step="0.01" min="0">
-
-    <button type="submit">Dodaj</button>
-</form>
+<p>
+    <a href="/quotes/{{ quote.id }}/pricing">Nowa wersja wyceny</a>
+</p>
 
 {% if quote.status == "accepted" %}
 <form method="post" action="/quotes/{{ quote.id }}/create-order">
