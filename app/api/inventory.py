@@ -244,6 +244,7 @@ def material_detail(
     moves = db.scalars(select(StockMove).where(StockMove.material_id == material_id).order_by(StockMove.created_at.desc())).all()
     reservations = db.scalars(
         select(Reservation)
+        .options(joinedload(Reservation.order))
         .where(Reservation.material_id == material_id)
         .order_by(Reservation.created_at.desc())
     ).all()

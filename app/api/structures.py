@@ -6,6 +6,12 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.order_materials_engine import (
+    auto_reserve_order_material,
+    estimate_material_weight,
+    get_latest_material_unit_price,
+    summarize_config_reservation_status,
+)
 from app.core.structure_engine import build_horizontal_fence_svg, calculate_horizontal_fence
 from app.db import Material, Order, OrderMaterial, OrderStructureConfig, StructureTemplate, get_db
 from app.security import get_current_user
@@ -108,24 +114,58 @@ def create_structure_config(
         svg_preview=svg_preview,
     )
     db.add(config)
+    db.flush()
 
     generated_lines = [
-        (post_material_id, _find_component_qty(result, "POST"), "Wygenerowano z konfiguracji konstrukcji (słupki)."),
-        (rail_material_id, _find_component_qty(result, "RAIL"), "Wygenerowano z konfiguracji konstrukcji (profile poziome)."),
-        (fill_material_id, _find_component_qty(result, "FILL"), "Wygenerowano z konfiguracji konstrukcji (wypełnienie)."),
+        (post_material_id, _find_component_qty(result, "POST")),
+        (rail_material_id, _find_component_qty(result, "RAIL")),
+        (fill_material_id, _find_component_qty(result, "FILL")),
     ]
-    for material_id, qty_required, note in generated_lines:
+
+    created_materials: list[OrderMaterial] = []
+    total_materials_cost = 0.0
+    total_estimated_weight = 0.0
+
+    for material_id, qty_required in generated_lines:
         if qty_required <= 0:
             continue
-        db.add(
-            OrderMaterial(
-                order_id=order_id,
-                material_id=material_id,
-                qty_required=qty_required,
-                qty_reserved=0,
-                note=note,
-            )
+
+        material = db.get(Material, material_id)
+        if not material:
+            continue
+
+        unit_price = get_latest_material_unit_price(db, material)
+        total_cost = qty_required * unit_price if unit_price is not None else None
+
+        order_material = OrderMaterial(
+            order_id=order_id,
+            material_id=material_id,
+            qty_required=qty_required,
+            qty_reserved=0,
+            unit_price=unit_price,
+            total_cost=total_cost,
+            material_status="missing",
+            source_config_id=config.id,
+            note=f"Wygenerowano z konfiguracji: {config.name}",
         )
+        db.add(order_material)
+        db.flush()
+
+        auto_reserve_order_material(db, order_material)
+        order_material.total_cost = order_material.qty_required * order_material.unit_price if order_material.unit_price is not None else None
+
+        if order_material.total_cost is not None:
+            total_materials_cost += float(order_material.total_cost)
+
+        estimated_weight = estimate_material_weight(material, order_material.qty_required)
+        if estimated_weight is not None:
+            total_estimated_weight += float(estimated_weight)
+
+        created_materials.append(order_material)
+
+    config.materials_cost = total_materials_cost if created_materials else None
+    config.estimated_weight_kg = total_estimated_weight if created_materials else None
+    config.reservation_status = summarize_config_reservation_status(created_materials)
 
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
