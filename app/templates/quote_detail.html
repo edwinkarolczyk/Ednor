@@ -42,7 +42,10 @@
 </p>
 
 {% if quote.status == "accepted" %}
+<h3>Utwórz zlecenie</h3>
 <form method="post" action="/quotes/{{ quote.id }}/create-order">
+    <label>Kwota zaliczki</label>
+    <input type="number" name="deposit_amount" step="0.01" min="0" required>
     <button type="submit">Utwórz zlecenie</button>
 </form>
 {% endif %}

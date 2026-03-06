@@ -77,8 +77,8 @@ class Order(Base):
     accepted_quote_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("quote_versions.id"), nullable=True, index=True
     )
-    deposit_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    materials_check_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    deposit_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
+    materials_check_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     assignments: Mapped[list["OrderAssignment"]] = relationship("OrderAssignment", back_populates="order")
@@ -248,10 +248,10 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
-    payment_type: Mapped[str] = mapped_column(String(50), nullable=False, default="other")
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    payment_type: Mapped[str] = mapped_column(String(30), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    status: Mapped[str] = mapped_column(String(40), nullable=False, default="planned")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="planned")
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
@@ -323,6 +323,13 @@ def init_db(hash_password_fn):
     # SQLite auto-migrations for columns introduced after initial deployment.
     _ensure_columns("quote_versions", [("description", "TEXT", "''")])
     _ensure_columns("pricing_quotes", [("use_manual_labor", "BOOLEAN", "0")])
+    _ensure_columns(
+        "orders",
+        [
+            ("deposit_required", "INTEGER", "1"),
+            ("materials_check_required", "INTEGER", "1"),
+        ],
+    )
     _ensure_columns(
         "quote_lines",
         [("line_type", "VARCHAR(50)", "'custom'"), ("quote_version_id", "INTEGER", None)],

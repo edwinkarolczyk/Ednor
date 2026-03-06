@@ -5,7 +5,12 @@
     <h1>Zlecenie #{{ order.order_no }} — {{ order.title }}</h1>
     <p>Klient: {{ order.client_name or '-' }}</p>
     <p>Adres: {{ order.address or '-' }}</p>
-    <p>Status: {{ order.status }}</p>
+    <p>Status zlecenia: <strong>{{ order.status }}</strong></p>
+    {% if order.status == "awaiting_deposit" %}
+    <p><small>Oczekiwanie na zaliczkę</small></p>
+    {% elif order.status == "awaiting_materials" %}
+    <p><small>Oczekiwanie na materiał</small></p>
+    {% endif %}
 
     {% if order.source_quote_id %}
     <p>Źródło: wycena #{{ order.source_quote_id }}{% if order.accepted_quote_version_id %} (wersja ID {{ order.accepted_quote_version_id }}){% endif %}</p>
@@ -64,7 +69,7 @@
     <table>
         <thead><tr><th>Typ</th><th>Kwota</th><th>Status</th><th>Data opłaty</th><th></th></tr></thead>
         <tbody>
-        {% for payment in payments %}
+        {% for payment in order.payments %}
             <tr>
                 <td>{{ payment.payment_type }}</td>
                 <td>{{ '%.2f'|format(payment.amount) }} zł</td>

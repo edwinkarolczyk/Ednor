@@ -27,6 +27,10 @@
                     <span class="badge">Wycena gotowa</span>
                 {% elif order.status == "draft" %}
                     <span class="badge">Szkic</span>
+                {% elif order.status == "awaiting_deposit" %}
+                    <span class="badge">Oczekiwanie na zaliczkę</span>
+                {% elif order.status == "awaiting_materials" %}
+                    <span class="badge">Oczekiwanie na materiał</span>
                 {% else %}
                     {{ order.status }}
                 {% endif %}

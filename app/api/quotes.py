@@ -415,7 +415,7 @@ def quote_reject(quote_id: int, db: Session = Depends(get_db), current_user: Use
 @router.post("/quotes/{quote_id}/create-order")
 def quote_create_order(
     quote_id: int,
-    deposit_amount: str = Form("0"),
+    deposit_amount: float = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -449,7 +449,7 @@ def quote_create_order(
         Payment(
             order_id=order.id,
             payment_type="deposit",
-            amount=_to_float(deposit_amount),
+            amount=deposit_amount,
             status="planned",
         )
     )
