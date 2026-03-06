@@ -1,0 +1,105 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card">
+    <h1>Materiał: {{ material.code }}</h1>
+
+    <h2>Dane materiału</h2>
+    <ul>
+        <li><strong>Kod:</strong> {{ material.code }}</li>
+        <li><strong>Nazwa:</strong> {{ material.name }}</li>
+        <li><strong>Kategoria:</strong> {{ material.category }}</li>
+        <li><strong>Jednostka:</strong> {{ material.unit }}</li>
+        <li><strong>Bieżący stan:</strong> {{ "%.2f"|format(stock_row.qty_on_hand) }}</li>
+    </ul>
+</section>
+
+<section class="card two-col-grid">
+    <div>
+        <h2>Dostawa</h2>
+        <form method="post" action="/inventory/{{ material.id }}/delivery" class="form-grid">
+            <label>Ilość
+                <input type="number" step="0.01" name="qty" min="0" required>
+            </label>
+            <label>Cena jednostkowa
+                <input type="number" step="0.01" name="unit_price" min="0" required>
+            </label>
+            <label>Notatka
+                <textarea name="note" placeholder="Nr dokumentu, dostawca itp."></textarea>
+            </label>
+            <button type="submit">Dodaj dostawę</button>
+        </form>
+    </div>
+
+    <div>
+        <h2>Korekta stanu</h2>
+        <form method="post" action="/inventory/{{ material.id }}/adjust" class="form-grid">
+            <label>Nowy stan
+                <input type="number" step="0.01" name="qty" required>
+            </label>
+            <label>Notatka
+                <textarea name="note" placeholder="Powód korekty"></textarea>
+            </label>
+            <button type="submit">Zapisz korektę</button>
+        </form>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Historia cen</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Cena</th>
+                    <th>Waluta</th>
+                    <th>Notatka</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for price in prices %}
+                <tr>
+                    <td>{{ price.valid_from.strftime('%Y-%m-%d %H:%M') if price.valid_from else '—' }}</td>
+                    <td>{{ "%.2f"|format(price.price) }}</td>
+                    <td>{{ price.currency }}</td>
+                    <td>{{ price.note or '—' }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="text-muted">Brak historii cen.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="card">
+    <h2>Historia ruchów</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Typ</th>
+                    <th>Ilość</th>
+                    <th>Cena</th>
+                    <th>Notatka</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for move in moves %}
+                <tr>
+                    <td>{{ move.created_at.strftime('%Y-%m-%d %H:%M') if move.created_at else '—' }}</td>
+                    <td>{{ move.move_type }}</td>
+                    <td>{{ "%.2f"|format(move.qty) }}</td>
+                    <td>{% if move.unit_price is not none %}{{ "%.2f"|format(move.unit_price) }} PLN{% else %}—{% endif %}</td>
+                    <td>{{ move.note or '—' }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5" class="text-muted">Brak ruchów magazynowych.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
