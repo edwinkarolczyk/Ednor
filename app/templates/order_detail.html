@@ -29,14 +29,32 @@
         <a class="btn" href="/orders/{{ order.id }}/structures/new">Dodaj konfigurację konstrukcji</a>
     </div>
 
-    {% for config in order_structure_configs %}
+    {% for config_data in order_structure_configs %}
+        {% set config = config_data.entity %}
         <article style="border: 1px solid rgba(148,163,184,.3); border-radius: 10px; padding: 12px; margin-bottom: 10px;">
             <p><strong>{{ config.name }}</strong> — {{ config.template.name }}</p>
+            <p>Typ / szablon: {{ config.template.structure_type }} / {{ config.template.code }}</p>
             <p>Długość: {{ '%.2f'|format(config.length_m) }} m | Wysokość: {{ '%.2f'|format(config.height_m) }} m</p>
-            <p><span class="status-badge status-full">wygenerowano materiały</span></p>
+            <p>
+                {% if config_data.reservation_status == "ok" %}
+                    <span class="status-badge status-full">Komplet materiałów</span>
+                {% elif config_data.reservation_status == "partial" %}
+                    <span class="status-badge status-partial">Częściowa rezerwacja</span>
+                {% else %}
+                    <span class="status-badge status-none">Braki materiałowe</span>
+                {% endif %}
+            </p>
             <div style="max-width: 920px; overflow-x: auto; background: rgba(15,23,42,.6); padding: 8px; border-radius: 8px;">
                 {{ config.svg_preview | safe }}
             </div>
+            <p>
+                Koszt materiałów: {% if config_data.materials_cost is not none %}{{ '%.2f'|format(config_data.materials_cost) }} PLN{% else %}Brak ceny{% endif %}<br>
+                Szacowana masa: {% if config_data.estimated_weight_kg is not none %}{{ '%.2f'|format(config_data.estimated_weight_kg) }} kg{% else %}—{% endif %}<br>
+                Rezerwacja:
+                {% if config_data.reservation_status == "ok" %}Komplet materiałów
+                {% elif config_data.reservation_status == "partial" %}Częściowa rezerwacja
+                {% else %}Braki materiałowe{% endif %}
+            </p>
         </article>
     {% else %}
         <p class="text-muted">Brak zapisanych konfiguracji konstrukcji.</p>
@@ -71,39 +89,43 @@
                     <th>Ilość zarezerwowana</th>
                     <th>Brakująca ilość</th>
                     <th>Jednostka</th>
+                    <th>Cena jedn.</th>
+                    <th>Koszt</th>
                     <th>Status</th>
                     <th>Akcje</th>
                 </tr>
             </thead>
             <tbody>
             {% for line in order_materials %}
-                {% set missing_qty = line.qty_required - line.qty_reserved %}
+                {% set item = line.entity %}
                 <tr>
-                    <td>{{ line.material.code }} — {{ line.material.name }}</td>
-                    <td>{{ '%.2f'|format(line.qty_required) }}</td>
-                    <td>{{ '%.2f'|format(line.qty_reserved) }}</td>
-                    <td>{{ '%.2f'|format(missing_qty if missing_qty > 0 else 0) }}</td>
-                    <td>{{ line.material.unit }}</td>
+                    <td>{{ item.material.code }} — {{ item.material.name }}</td>
+                    <td>{{ '%.2f'|format(item.qty_required) }}</td>
+                    <td>{{ '%.2f'|format(item.qty_reserved) }}</td>
+                    <td>{{ '%.2f'|format(line.missing_qty) }}</td>
+                    <td>{{ item.material.stock_unit or item.material.unit }}</td>
+                    <td>{% if line.unit_price is not none %}{{ '%.2f'|format(line.unit_price) }} PLN{% else %}Brak ceny{% endif %}</td>
+                    <td>{% if line.total_cost is not none %}{{ '%.2f'|format(line.total_cost) }} PLN{% else %}Brak ceny{% endif %}</td>
                     <td>
-                        {% if line.qty_reserved >= line.qty_required %}
-                            <span class="status-badge status-full">Zarezerwowano</span>
-                        {% elif line.qty_reserved > 0 %}
+                        {% if line.material_status == "ok" %}
+                            <span class="status-badge status-full">OK</span>
+                        {% elif line.material_status == "partial" %}
                             <span class="status-badge status-partial">Częściowo</span>
                         {% else %}
-                            <span class="status-badge status-none">Brak rezerwacji</span>
+                            <span class="status-badge status-none">Brak</span>
                         {% endif %}
                     </td>
                     <td>
-                        <form method="post" action="/orders/{{ order.id }}/materials/{{ line.id }}/reserve" style="display:inline-block">
+                        <form method="post" action="/orders/{{ order.id }}/materials/{{ item.id }}/reserve" style="display:inline-block">
                             <button type="submit">Rezerwuj</button>
                         </form>
-                        <form method="post" action="/orders/{{ order.id }}/materials/{{ line.id }}/release" style="display:inline-block">
+                        <form method="post" action="/orders/{{ order.id }}/materials/{{ item.id }}/release" style="display:inline-block">
                             <button type="submit">Zwolnij</button>
                         </form>
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="7">Brak przypisanych materiałów.</td></tr>
+                <tr><td colspan="9">Brak przypisanych materiałów.</td></tr>
             {% endfor %}
             </tbody>
         </table>

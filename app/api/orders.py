@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import UPLOADS_DIR
+from app.core.order_materials_engine import determine_material_status
 from app.db import (
     Attachment,
     Material,
@@ -45,6 +46,27 @@ def _is_installer_or_admin(user: User) -> bool:
 def _next_order_no(db: Session) -> int:
     current_max = db.scalar(select(func.max(Order.order_no)))
     return (current_max or 0) + 1
+
+
+def _build_order_material_view(order_material: OrderMaterial) -> dict:
+    missing_qty = max(float(order_material.qty_required - order_material.qty_reserved), 0.0)
+    status = order_material.material_status or determine_material_status(order_material.qty_required, order_material.qty_reserved)
+    return {
+        "entity": order_material,
+        "missing_qty": missing_qty,
+        "material_status": status,
+        "unit_price": order_material.unit_price,
+        "total_cost": order_material.total_cost,
+    }
+
+
+def _build_config_view(config: OrderStructureConfig) -> dict:
+    return {
+        "entity": config,
+        "materials_cost": config.materials_cost,
+        "estimated_weight_kg": config.estimated_weight_kg,
+        "reservation_status": config.reservation_status or "missing",
+    }
 
 
 @router.get("/my-orders")
@@ -175,6 +197,9 @@ def order_detail(
         .where(OrderStructureConfig.order_id == order_id)
         .order_by(OrderStructureConfig.created_at.desc())
     ).all()
+    order_materials_view = [_build_order_material_view(line) for line in order.order_materials]
+    order_structure_configs_view = [_build_config_view(config) for config in order_structure_configs]
+
     return templates.TemplateResponse(
         "order_detail.html",
         {
@@ -191,8 +216,8 @@ def order_detail(
             "latest_time_entries": latest_time_entries,
             "payments": payments,
             "materials": materials,
-            "order_materials": order.order_materials,
-            "order_structure_configs": order_structure_configs,
+            "order_materials": order_materials_view,
+            "order_structure_configs": order_structure_configs_view,
             "material_states": material_states,
             "current_user": request.state.current_user,
         },
@@ -241,6 +266,7 @@ def add_material_to_order(
     )
     if order_material:
         order_material.qty_required += qty_required
+        order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
         if note.strip():
             order_material.note = note.strip()
     else:
@@ -250,6 +276,7 @@ def add_material_to_order(
                 material_id=material_id,
                 qty_required=qty_required,
                 qty_reserved=0,
+                material_status="missing",
                 note=note.strip() or None,
             )
         )
@@ -288,6 +315,8 @@ def reserve_order_material(
         )
         order_material.qty_reserved += reserve_qty
 
+    order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
+
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
 
@@ -314,6 +343,7 @@ def release_order_material(
         reservation.status = "released"
 
     order_material.qty_reserved = 0
+    order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
 
