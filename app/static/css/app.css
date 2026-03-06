@@ -36,3 +36,8 @@ th, td { border-bottom: 1px solid var(--border); text-align: left; padding: .75r
 }
 
 .time-actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+
+.status-list { list-style: none; padding-left: 0; display: grid; gap: .4rem; }
+.status-done { color: #067647; }
+.status-in-progress { color: #b54708; }
+.status-planned { color: #667085; }

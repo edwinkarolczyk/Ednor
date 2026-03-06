@@ -2,8 +2,44 @@
 
 {% block content %}
 <section class="card">
-    <h1>Witaj w Ednor</h1>
-    <p>Etap 2 demo: logowanie, role i moje zlecenia.</p>
+    <h1>EDNOR — status projektu</h1>
+    <p>Aktualny stan wdrożenia systemu zarządzania firmą produkcyjno-montażową.</p>
+
+    <h2>Etapy projektu</h2>
+    <ul class="status-list">
+        <li class="status-done">✅ Etap 1 — WEB skeleton</li>
+        <li class="status-done">✅ Etap 2 — logowanie + role + podstawowe zlecenia</li>
+        <li class="status-done">✅ Etap 3 — wyceny + ogrodzenia v1 + PDF</li>
+        <li class="status-done">✅ Etap 3.5 — time tracking START/STOP</li>
+        <li class="status-in-progress">🟡 Etap 3.6 — Model B: wycena → akceptacja → zaliczka → zlecenie</li>
+        <li class="status-planned">⬜ Etap 4 — magazyn + historia cen + rezerwacje</li>
+        <li class="status-planned">⬜ Etap 5 — produkcja</li>
+        <li class="status-planned">⬜ Etap 6 — kalendarz globalny</li>
+        <li class="status-planned">⬜ Etap 7 — raporty</li>
+    </ul>
+
+    <h2>Aktualnie robimy</h2>
+    <p><strong>Etap 3.6 — uporządkowanie procesu:</strong><br>Wycena → Akceptacja → Zaliczka → Zlecenie</p>
+    <p><strong>Następny krok:</strong><br>Etap 3.6C — zaliczka i statusy płatności</p>
+
+    <h2>Dostępne moduły</h2>
+    <p><strong>Dostępne moduły:</strong></p>
+    <ul>
+        <li>Użytkownicy</li>
+        <li>Zlecenia</li>
+        <li>Wyceny</li>
+        <li>Time tracking</li>
+        <li>PDF wyceny</li>
+    </ul>
+
+    <p><strong>Planowane moduły:</strong></p>
+    <ul>
+        <li>Magazyn</li>
+        <li>Produkcja</li>
+        <li>Kalendarz</li>
+        <li>Raporty</li>
+    </ul>
+
     {% if not request.state.current_user %}
     <a class="btn" href="/login">Zaloguj się</a>
     {% endif %}
