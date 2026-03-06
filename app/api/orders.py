@@ -14,6 +14,7 @@ from app.db import (
     Order,
     OrderAssignment,
     OrderMaterial,
+    OrderStructureConfig,
     Payment,
     PricingQuote,
     Reservation,
@@ -168,6 +169,12 @@ def order_detail(
         .order_by(TimeEntry.started_at.desc())
         .limit(10)
     ).all()
+    order_structure_configs = db.scalars(
+        select(OrderStructureConfig)
+        .options(joinedload(OrderStructureConfig.template))
+        .where(OrderStructureConfig.order_id == order_id)
+        .order_by(OrderStructureConfig.created_at.desc())
+    ).all()
     return templates.TemplateResponse(
         "order_detail.html",
         {
@@ -185,6 +192,7 @@ def order_detail(
             "payments": payments,
             "materials": materials,
             "order_materials": order.order_materials,
+            "order_structure_configs": order_structure_configs,
             "material_states": material_states,
             "current_user": request.state.current_user,
         },

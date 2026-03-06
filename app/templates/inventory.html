@@ -3,9 +3,13 @@
 {% block content %}
 <section class="card">
     <div class="row-between">
-        <h1>Magazyn</h1>
-        <a class="btn" href="/inventory/new">Dodaj materiał</a>
+        <h1>{{ page_title }}</h1>
+        <a class="btn" href="/inventory/new{% if inventory_scope and inventory_scope != 'all' %}?category={{ inventory_scope }}{% endif %}">Dodaj materiał</a>
     </div>
+
+    {% if inventory_scope == 'surowce' %}
+        <p class="text-muted">Widok surowców: stosuj nazwy techniczne (np. profil 20x30x2, rura fi42.4x2).</p>
+    {% endif %}
 
     <div class="table-wrap">
         <table>
@@ -26,7 +30,13 @@
             {% for material in materials %}
                 <tr>
                     <td>{{ material.code }}</td>
-                    <td>{{ material.name }}</td>
+                    <td>
+                        {% if inventory_scope == 'surowce' %}
+                            <strong>{{ material.name }}</strong>
+                        {% else %}
+                            {{ material.name }}
+                        {% endif %}
+                    </td>
                     <td>{{ material.category }}</td>
                     <td>{{ material.stock_unit or material.unit }}</td>
                     {% set physical_qty, reserved_qty, available_qty = material_states.get(material.id, (0, 0, 0)) %}

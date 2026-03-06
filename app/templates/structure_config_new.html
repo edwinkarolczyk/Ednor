@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card narrow">
+    <h1>Nowa konfiguracja konstrukcji — zlecenie #{{ order.order_no }}</h1>
+    <p class="text-muted">Ta konfiguracja automatycznie utworzy materiały zlecenia i zapisze wizualizację poglądową.</p>
+
+    <form method="post" class="form-grid">
+        <h2 style="grid-column: 1 / -1; margin-bottom: 0;">Dane konstrukcji</h2>
+
+        <label>Szablon konstrukcji
+            <select name="template_id" required>
+                {% for tpl in structure_templates %}
+                    <option value="{{ tpl.id }}">{{ tpl.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>Nazwa konfiguracji
+            <input name="name" required placeholder="np. Front działki">
+        </label>
+
+        <label>Długość [m]
+            <input type="number" name="length_m" step="0.01" min="0.1" value="10" required>
+        </label>
+
+        <label>Wysokość [m]
+            <input type="number" name="height_m" step="0.01" min="0.1" value="1.5" required>
+        </label>
+
+        <label>Rozstaw przęseł [m]
+            <input type="number" name="span_m" step="0.01" min="0.5" value="2.5" required>
+        </label>
+
+        <label>Liczba profili poziomych
+            <input type="number" name="rails_count" min="1" value="2" required>
+        </label>
+
+        <label>Liczba bram
+            <input type="number" name="gates_count" min="0" value="0" required>
+        </label>
+
+        <label>Liczba furtek
+            <input type="number" name="wickets_count" min="0" value="0" required>
+        </label>
+
+        <h2 style="grid-column: 1 / -1; margin-bottom: 0;">Materiały</h2>
+
+        <label>Materiał słupków
+            <select name="post_material_id" required>
+                {% for material in post_materials %}
+                    <option value="{{ material.id }}">{{ material.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>Materiał profili poziomych
+            <select name="rail_material_id" required>
+                {% for material in rail_materials %}
+                    <option value="{{ material.id }}">{{ material.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>Materiał wypełnienia
+            <select name="fill_material_id" required>
+                {% for material in fill_materials %}
+                    <option value="{{ material.id }}">{{ material.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <button type="submit">Przelicz i dodaj do zlecenia</button>
+    </form>
+</section>
+{% endblock %}
