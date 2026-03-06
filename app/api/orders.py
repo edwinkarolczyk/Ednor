@@ -191,19 +191,19 @@ def mark_payment_paid(
     if not _is_admin(current_user):
         raise HTTPException(status_code=403)
 
-    payment = db.scalar(select(Payment).where(Payment.id == payment_id, Payment.order_id == order_id))
     order = db.get(Order, order_id)
-    if not payment or not order:
+    if not order:
+        raise HTTPException(status_code=404)
+
+    payment = db.get(Payment, payment_id)
+    if not payment or payment.order_id != order_id:
         raise HTTPException(status_code=404)
 
     payment.status = "paid"
     payment.paid_at = datetime.utcnow()
 
     if payment.payment_type == "deposit":
-        if order.materials_check_required:
-            order.status = "awaiting_materials"
-        else:
-            order.status = "ready_for_production"
+        order.status = "awaiting_materials"
 
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
