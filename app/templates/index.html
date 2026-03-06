@@ -12,8 +12,9 @@
         <li class="status-done">[x] Etap 3 — wyceny + ogrodzenia v1 + PDF</li>
         <li class="status-done">[x] Etap 3.5 — time tracking START/STOP</li>
         <li class="status-done">[x] Etap 3.6 — Model B: wycena -> akceptacja -> zaliczka -> zlecenie</li>
-        <li class="status-in-progress">[~] Etap 4A — magazyn: materiały + historia cen + stany + dostawy</li>
-        <li class="status-planned">[ ] Etap 4B — rezerwacje pod zlecenie</li>
+        <li class="status-done">[x] Etap 4A — magazyn: materiały + historia cen + stany + dostawy</li>
+        <li class="status-done">[x] Etap 4B — rezerwacje pod zlecenie</li>
+        <li class="status-in-progress">[~] Etap 4X — definicja materiału + przeliczniki + fundament pod ogrodzenia</li>
         <li class="status-planned">[ ] Etap 4C — blokada startu produkcji bez materiału</li>
         <li class="status-planned">[ ] Etap 5 — produkcja</li>
         <li class="status-planned">[ ] Etap 6 — kalendarz globalny</li>
@@ -21,9 +22,9 @@
     </ul>
 
     <h2>Aktualnie robimy</h2>
-    <p><strong>Etap 4A — fundament magazynu:</strong><br>Materiały -> ceny -> stany -> dostawy</p>
+    <p><strong>Definicje surowców + automatyczne przeliczanie cen i ilości</strong></p>
 
-    <p><strong>Następny krok:</strong><br>Etap 4B — rezerwacje materiałów pod zlecenie</p>
+    <p><strong>Następny krok:</strong><br>Automatyczne liczenie materiałów w zleceniu na podstawie typu ogrodzenia</p>
 
     {% if not request.state.current_user %}
     <a class="btn" href="/login">Zaloguj się</a>

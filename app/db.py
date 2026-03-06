@@ -277,6 +277,17 @@ class Material(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
+    width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    height_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    grade: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    finish: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    weight_per_meter_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_per_piece_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trade_length_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stock_unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    purchase_pricing_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -297,6 +308,11 @@ class MaterialPrice(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False, index=True)
     price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    input_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    normalized_price_per_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    normalized_price_per_mb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    normalized_price_per_piece: Mapped[float | None] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="PLN")
     valid_from: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -361,11 +377,28 @@ class FenceTemplate(Base):
     __tablename__ = "fence_templates"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
 
     fence_inputs: Mapped[list["FenceQuoteInput"]] = relationship("FenceQuoteInput", back_populates="template")
+    components: Mapped[list["FenceTemplateComponent"]] = relationship("FenceTemplateComponent", back_populates="template")
+
+
+class FenceTemplateComponent(Base):
+    __tablename__ = "fence_template_components"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("fence_templates.id"), nullable=False, index=True)
+    component_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    material_id: Mapped[int | None] = mapped_column(ForeignKey("materials.id"), nullable=True, index=True)
+    formula_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    param_1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    param_2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    template: Mapped["FenceTemplate"] = relationship("FenceTemplate", back_populates="components")
+    material: Mapped["Material | None"] = relationship("Material")
 
 
 class FenceQuoteInput(Base):
@@ -456,6 +489,33 @@ def init_db(hash_password_fn):
         ],
     )
 
+    _ensure_columns(
+        "materials",
+        [
+            ("width_mm", "REAL", None),
+            ("height_mm", "REAL", None),
+            ("thickness_mm", "REAL", None),
+            ("diameter_mm", "REAL", None),
+            ("grade", "TEXT", None),
+            ("finish", "TEXT", None),
+            ("weight_per_meter_kg", "REAL", None),
+            ("weight_per_piece_kg", "REAL", None),
+            ("trade_length_m", "REAL", None),
+            ("stock_unit", "TEXT", None),
+            ("purchase_pricing_mode", "TEXT", None),
+        ],
+    )
+    _ensure_columns(
+        "material_prices",
+        [
+            ("input_price", "REAL", None),
+            ("input_unit", "TEXT", None),
+            ("normalized_price_per_kg", "REAL", None),
+            ("normalized_price_per_mb", "REAL", None),
+            ("normalized_price_per_piece", "REAL", None),
+        ],
+    )
+
     inspector = inspect(engine)
     expected_tables = {
         "orders",
@@ -473,6 +533,7 @@ def init_db(hash_password_fn):
         "reservations",
         "fence_templates",
         "fence_quote_inputs",
+        "fence_template_components",
         "time_entries",
     }
     missing_tables = expected_tables.difference(set(inspector.get_table_names()))
@@ -532,9 +593,9 @@ def init_db(hash_password_fn):
             admin.roles.append(admin_role)
             db.commit()
 
-        basic_template = db.scalar(select(FenceTemplate).where(FenceTemplate.code == "BASIC"))
+        basic_template = db.scalar(select(FenceTemplate).where(FenceTemplate.code == "BASIC_HORIZONTAL"))
         if not basic_template:
-            db.add(FenceTemplate(code="BASIC", name="Ogrodzenie podstawowe (2 profile poziome)", is_active=True))
+            db.add(FenceTemplate(code="BASIC_HORIZONTAL", name="Ogrodzenie poziome podstawowe", is_active=True))
             db.commit()
     finally:
         db.close()
