@@ -15,7 +15,9 @@
                     <th>Nazwa</th>
                     <th>Kategoria</th>
                     <th>Jednostka</th>
-                    <th>Stan</th>
+                    <th>Stan fizyczny</th>
+                    <th>Zarezerwowane</th>
+                    <th>Dostępne</th>
                     <th>Ostatnia cena</th>
                     <th></th>
                 </tr>
@@ -27,7 +29,10 @@
                     <td>{{ material.name }}</td>
                     <td>{{ material.category }}</td>
                     <td>{{ material.unit }}</td>
-                    <td>{{ "%.2f"|format(material.stock_row.qty_on_hand if material.stock_row else 0) }}</td>
+                    {% set physical_qty, reserved_qty, available_qty = material_states.get(material.id, (0, 0, 0)) %}
+                    <td>{{ "%.2f"|format(physical_qty) }}</td>
+                    <td>{{ "%.2f"|format(reserved_qty) }}</td>
+                    <td>{{ "%.2f"|format(available_qty) }}</td>
                     <td>
                         {% set last_price = latest_prices.get(material.id) %}
                         {% if last_price %}
@@ -40,7 +45,7 @@
                 </tr>
             {% else %}
                 <tr>
-                    <td colspan="7" class="text-muted">Brak materiałów w bazie.</td>
+                    <td colspan="9" class="text-muted">Brak materiałów w bazie.</td>
                 </tr>
             {% endfor %}
             </tbody>

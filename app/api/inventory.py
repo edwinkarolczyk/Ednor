@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.db import INVENTORY_CATEGORIES, Material, MaterialPrice, Stock, StockMove, get_db
+from app.db import INVENTORY_CATEGORIES, Material, MaterialPrice, Reservation, Stock, StockMove, get_db, material_stock_state
 from app.security import get_current_user
 
 router = APIRouter(tags=["inventory"])
@@ -25,6 +25,10 @@ def inventory_page(
     deduped_latest_prices: dict[int, MaterialPrice] = {}
     for price in db.scalars(select(MaterialPrice).order_by(MaterialPrice.material_id, MaterialPrice.valid_from.desc())).all():
         deduped_latest_prices.setdefault(price.material_id, price)
+    material_states = {
+        material.id: material_stock_state(db, material.id)
+        for material in materials
+    }
 
     return templates.TemplateResponse(
         "inventory.html",
@@ -33,6 +37,7 @@ def inventory_page(
             "page_title": "Magazyn",
             "materials": materials,
             "latest_prices": deduped_latest_prices,
+            "material_states": material_states,
             "current_user": request.state.current_user,
         },
     )
@@ -102,6 +107,12 @@ def material_detail(
         select(MaterialPrice).where(MaterialPrice.material_id == material_id).order_by(MaterialPrice.valid_from.desc())
     ).all()
     moves = db.scalars(select(StockMove).where(StockMove.material_id == material_id).order_by(StockMove.created_at.desc())).all()
+    reservations = db.scalars(
+        select(Reservation)
+        .where(Reservation.material_id == material_id)
+        .order_by(Reservation.created_at.desc())
+    ).all()
+    physical_qty, reserved_qty, available_qty = material_stock_state(db, material_id)
 
     return templates.TemplateResponse(
         "inventory_detail.html",
@@ -110,8 +121,12 @@ def material_detail(
             "page_title": f"Materiał {material.code}",
             "material": material,
             "stock_row": stock_row,
+            "physical_qty": physical_qty,
+            "reserved_qty": reserved_qty,
+            "available_qty": available_qty,
             "prices": prices,
             "moves": moves,
+            "reservations": reservations,
             "current_user": request.state.current_user,
         },
     )

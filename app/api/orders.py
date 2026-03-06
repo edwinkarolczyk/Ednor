@@ -8,7 +8,21 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import UPLOADS_DIR
-from app.db import Attachment, Order, OrderAssignment, Payment, PricingQuote, Role, TimeEntry, User, get_db
+from app.db import (
+    Attachment,
+    Material,
+    Order,
+    OrderAssignment,
+    OrderMaterial,
+    Payment,
+    PricingQuote,
+    Reservation,
+    Role,
+    TimeEntry,
+    User,
+    get_db,
+    material_stock_state,
+)
 from app.security import get_current_user
 
 router = APIRouter(tags=["orders"])
@@ -111,7 +125,14 @@ def order_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    order = db.get(Order, order_id)
+    order = db.scalar(
+        select(Order)
+        .options(
+            joinedload(Order.order_materials).joinedload(OrderMaterial.material),
+            joinedload(Order.payments),
+        )
+        .where(Order.id == order_id)
+    )
     if not order:
         raise HTTPException(status_code=404)
 
@@ -135,6 +156,11 @@ def order_detail(
         select(PricingQuote).where(PricingQuote.order_id == order_id).order_by(PricingQuote.version_no.desc()).limit(1)
     )
     payments = db.scalars(select(Payment).where(Payment.order_id == order_id).order_by(Payment.created_at.desc())).all()
+    materials = db.scalars(select(Material).where(Material.is_active.is_(True)).order_by(Material.code)).all()
+    material_states = {
+        material.id: material_stock_state(db, material.id)
+        for material in materials
+    }
     latest_time_entries = db.scalars(
         select(TimeEntry)
         .options(joinedload(TimeEntry.user))
@@ -157,6 +183,9 @@ def order_detail(
             "can_track_installation_time": _is_installer_or_admin(current_user),
             "latest_time_entries": latest_time_entries,
             "payments": payments,
+            "materials": materials,
+            "order_materials": order.order_materials,
+            "material_states": material_states,
             "current_user": request.state.current_user,
         },
     )
@@ -175,6 +204,108 @@ def assign_user(
         raise HTTPException(status_code=403)
     assignment = OrderAssignment(order_id=order_id, user_id=user_id, role_code=role_code, note=note or None)
     db.add(assignment)
+    db.commit()
+    return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
+
+
+@router.post("/orders/{order_id}/materials/add")
+def add_material_to_order(
+    order_id: int,
+    material_id: int = Form(...),
+    qty_required: float = Form(...),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404)
+
+    material = db.get(Material, material_id)
+    if not material:
+        raise HTTPException(status_code=404)
+
+    order_material = db.scalar(
+        select(OrderMaterial).where(
+            OrderMaterial.order_id == order_id,
+            OrderMaterial.material_id == material_id,
+        )
+    )
+    if order_material:
+        order_material.qty_required += qty_required
+        if note.strip():
+            order_material.note = note.strip()
+    else:
+        db.add(
+            OrderMaterial(
+                order_id=order_id,
+                material_id=material_id,
+                qty_required=qty_required,
+                qty_reserved=0,
+                note=note.strip() or None,
+            )
+        )
+
+    db.commit()
+    return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
+
+
+@router.post("/orders/{order_id}/materials/{order_material_id}/reserve")
+def reserve_order_material(
+    order_id: int,
+    order_material_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    order_material = db.get(OrderMaterial, order_material_id)
+    if not order_material or order_material.order_id != order_id:
+        raise HTTPException(status_code=404)
+
+    missing_to_reserve = max(order_material.qty_required - order_material.qty_reserved, 0)
+    if missing_to_reserve <= 0:
+        return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
+
+    _, _, available_qty = material_stock_state(db, order_material.material_id)
+    reserve_qty = min(missing_to_reserve, max(available_qty, 0))
+
+    if reserve_qty > 0:
+        db.add(
+            Reservation(
+                order_id=order_id,
+                material_id=order_material.material_id,
+                qty_reserved=reserve_qty,
+                status="reserved",
+                note=f"Rezerwacja dla pozycji materiałowej #{order_material.id}",
+            )
+        )
+        order_material.qty_reserved += reserve_qty
+
+    db.commit()
+    return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
+
+
+@router.post("/orders/{order_id}/materials/{order_material_id}/release")
+def release_order_material(
+    order_id: int,
+    order_material_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    order_material = db.get(OrderMaterial, order_material_id)
+    if not order_material or order_material.order_id != order_id:
+        raise HTTPException(status_code=404)
+
+    reservations = db.scalars(
+        select(Reservation).where(
+            Reservation.order_id == order_id,
+            Reservation.material_id == order_material.material_id,
+            Reservation.status == "reserved",
+        )
+    ).all()
+    for reservation in reservations:
+        reservation.status = "released"
+
+    order_material.qty_reserved = 0
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
 

@@ -15,9 +15,10 @@ from sqlalchemy import (
     create_engine,
     func,
     inspect,
+    select,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from app.config import DATA_DIR
 
@@ -86,6 +87,12 @@ class Order(Base):
     pricing_quotes: Mapped[list["PricingQuote"]] = relationship("PricingQuote", back_populates="order")
     time_entries: Mapped[list["TimeEntry"]] = relationship("TimeEntry", back_populates="order")
     payments: Mapped[list["Payment"]] = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
+    order_materials: Mapped[list["OrderMaterial"]] = relationship(
+        "OrderMaterial", back_populates="order", cascade="all, delete-orphan"
+    )
+    reservations: Mapped[list["Reservation"]] = relationship(
+        "Reservation", back_populates="order", cascade="all, delete-orphan"
+    )
     source_quote: Mapped["Quote | None"] = relationship("Quote", back_populates="orders", foreign_keys=[source_quote_id])
 
 
@@ -320,6 +327,36 @@ class StockMove(Base):
     material: Mapped["Material"] = relationship("Material", back_populates="moves")
 
 
+class OrderMaterial(Base):
+    __tablename__ = "order_materials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False, index=True)
+    qty_required: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    qty_reserved: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    order: Mapped["Order"] = relationship("Order", back_populates="order_materials")
+    material: Mapped["Material"] = relationship("Material")
+
+
+class Reservation(Base):
+    __tablename__ = "reservations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False, index=True)
+    qty_reserved: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="reserved")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    order: Mapped["Order"] = relationship("Order", back_populates="reservations")
+    material: Mapped["Material"] = relationship("Material")
+
+
 class FenceTemplate(Base):
     __tablename__ = "fence_templates"
 
@@ -355,6 +392,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def material_stock_state(db: Session, material_id: int) -> tuple[float, float, float]:
+    stock_row = db.get(Stock, material_id)
+    physical_qty = stock_row.qty_on_hand if stock_row else 0.0
+    reserved_qty = db.scalar(
+        select(func.coalesce(func.sum(Reservation.qty_reserved), 0.0)).where(
+            Reservation.material_id == material_id,
+            Reservation.status == "reserved",
+        )
+    )
+    available_qty = physical_qty - float(reserved_qty or 0.0)
+    return physical_qty, float(reserved_qty or 0.0), available_qty
 
 
 def _sqlite_columns(conn, table: str) -> set[str]:
@@ -419,6 +469,8 @@ def init_db(hash_password_fn):
         "material_prices",
         "stock",
         "stock_moves",
+        "order_materials",
+        "reservations",
         "fence_templates",
         "fence_quote_inputs",
         "time_entries",
