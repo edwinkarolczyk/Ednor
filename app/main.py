@@ -18,6 +18,8 @@ from app.api.pricing import router as pricing_router
 from app.api.pricing import set_templates as pricing_set_templates
 from app.api.quotes import router as quotes_router
 from app.api.quotes import set_templates as quotes_set_templates
+from app.api.structures import router as structures_router
+from app.api.structures import set_templates as structures_set_templates
 from app.api.time import router as time_router
 from app.api.users import router as users_router
 from app.api.users import set_templates as users_set_templates
@@ -37,6 +39,7 @@ pricing_set_templates(templates)
 quotes_set_templates(templates)
 users_set_templates(templates)
 inventory_set_templates(templates)
+structures_set_templates(templates)
 
 
 @app.middleware("http")
@@ -74,6 +77,7 @@ app.include_router(pricing_router)
 app.include_router(quotes_router)
 app.include_router(users_router)
 app.include_router(inventory_router)
+app.include_router(structures_router)
 app.include_router(time_router)
 
 

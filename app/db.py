@@ -266,7 +266,7 @@ class Payment(Base):
     order: Mapped[Order] = relationship("Order", back_populates="payments")
 
 
-INVENTORY_CATEGORIES = ["profile", "rury", "blacha", "drut", "elektrody", "inne"]
+INVENTORY_CATEGORIES = ["surowce", "elementy_montazowe", "elementy_handlowe", "inne"]
 
 
 class Material(Base):
@@ -356,6 +356,54 @@ class OrderMaterial(Base):
 
     order: Mapped["Order"] = relationship("Order", back_populates="order_materials")
     material: Mapped["Material"] = relationship("Material")
+
+
+class StructureTemplate(Base):
+    __tablename__ = "structure_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    structure_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
+
+
+class StructureTemplateComponent(Base):
+    __tablename__ = "structure_template_components"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("structure_templates.id"), nullable=False, index=True)
+    component_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    component_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    material_id: Mapped[int | None] = mapped_column(ForeignKey("materials.id"), nullable=True, index=True)
+    formula_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    param_1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    param_2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    template: Mapped["StructureTemplate"] = relationship("StructureTemplate")
+    material: Mapped["Material | None"] = relationship("Material")
+
+
+class OrderStructureConfig(Base):
+    __tablename__ = "order_structure_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("structure_templates.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    length_m: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    height_m: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    span_m: Mapped[float] = mapped_column(Float, nullable=False, default=2.5)
+    rails_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    gates_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    wickets_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    raw_result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    svg_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    order: Mapped["Order"] = relationship("Order")
+    template: Mapped["StructureTemplate"] = relationship("StructureTemplate")
 
 
 class Reservation(Base):
@@ -535,6 +583,9 @@ def init_db(hash_password_fn):
         "fence_quote_inputs",
         "fence_template_components",
         "time_entries",
+        "structure_templates",
+        "structure_template_components",
+        "order_structure_configs",
     }
     missing_tables = expected_tables.difference(set(inspector.get_table_names()))
     if missing_tables:
@@ -596,6 +647,49 @@ def init_db(hash_password_fn):
         basic_template = db.scalar(select(FenceTemplate).where(FenceTemplate.code == "BASIC_HORIZONTAL"))
         if not basic_template:
             db.add(FenceTemplate(code="BASIC_HORIZONTAL", name="Ogrodzenie poziome podstawowe", is_active=True))
+            db.commit()
+
+        structure_template = db.scalar(select(StructureTemplate).where(StructureTemplate.code == "FENCE_HORIZONTAL_BASIC"))
+        if not structure_template:
+            structure_template = StructureTemplate(
+                code="FENCE_HORIZONTAL_BASIC",
+                name="Ogrodzenie poziome podstawowe",
+                structure_type="ogrodzenie",
+                is_active=True,
+            )
+            db.add(structure_template)
+            db.commit()
+            db.refresh(structure_template)
+
+        existing_components = db.scalars(
+            select(StructureTemplateComponent).where(StructureTemplateComponent.template_id == structure_template.id)
+        ).all()
+        if not existing_components:
+            db.add_all(
+                [
+                    StructureTemplateComponent(
+                        template_id=structure_template.id,
+                        component_code="POST",
+                        component_name="Słupek",
+                        formula_type="POST_COUNT",
+                        sort_order=1,
+                    ),
+                    StructureTemplateComponent(
+                        template_id=structure_template.id,
+                        component_code="RAIL",
+                        component_name="Profil poziomy",
+                        formula_type="RAIL_LENGTH",
+                        sort_order=2,
+                    ),
+                    StructureTemplateComponent(
+                        template_id=structure_template.id,
+                        component_code="FILL",
+                        component_name="Wypełnienie",
+                        formula_type="FILL_LENGTH",
+                        sort_order=3,
+                    ),
+                ]
+            )
             db.commit()
     finally:
         db.close()

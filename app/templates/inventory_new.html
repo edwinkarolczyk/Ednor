@@ -9,16 +9,20 @@
         </label>
 
         <label>Nazwa
-            <input name="name" required placeholder="Pełna nazwa materiału">
+            <input name="name" required placeholder="np. profil 20x30x2">
         </label>
 
         <label>Kategoria
             <select name="category" required>
                 {% for category in categories %}
-                    <option value="{{ category }}">{{ category }}</option>
+                    <option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>{{ category }}</option>
                 {% endfor %}
             </select>
         </label>
+
+        {% if selected_category == 'surowce' %}
+        <p style="grid-column: 1 / -1; margin: 0;" class="text-muted">Dla surowców zalecana nazwa techniczna, np. profil 20x30x2.</p>
+        {% endif %}
 
         <label>Jednostka (legacy)
             <select name="unit" required>

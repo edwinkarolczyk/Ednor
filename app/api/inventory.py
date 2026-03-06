@@ -46,6 +46,32 @@ def _format_latest_price_for_material(material: Material, price: MaterialPrice |
     return "brak ceny"
 
 
+def _inventory_by_category_page(request: Request, db: Session, category: str, title: str):
+    materials = db.scalars(
+        select(Material).options(joinedload(Material.stock_row)).where(Material.category == category).order_by(Material.code)
+    ).unique().all()
+    deduped_latest_prices: dict[int, MaterialPrice] = {}
+    for price in db.scalars(select(MaterialPrice).order_by(MaterialPrice.material_id, MaterialPrice.valid_from.desc())).all():
+        deduped_latest_prices.setdefault(price.material_id, price)
+    material_states = {material.id: material_stock_state(db, material.id) for material in materials}
+    latest_prices_display = {
+        material.id: _format_latest_price_for_material(material, deduped_latest_prices.get(material.id)) for material in materials
+    }
+
+    return templates.TemplateResponse(
+        "inventory.html",
+        {
+            "request": request,
+            "page_title": title,
+            "materials": materials,
+            "latest_prices_display": latest_prices_display,
+            "material_states": material_states,
+            "current_user": request.state.current_user,
+            "inventory_scope": category,
+        },
+    )
+
+
 @router.get("/inventory")
 def inventory_page(
     request: Request,
@@ -70,12 +96,43 @@ def inventory_page(
             "latest_prices_display": latest_prices_display,
             "material_states": material_states,
             "current_user": request.state.current_user,
+            "inventory_scope": "all",
         },
     )
 
 
+@router.get("/inventory/raw-materials")
+def inventory_raw_materials(
+    request: Request,
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user),
+):
+    return _inventory_by_category_page(request=request, db=db, category="surowce", title="Surowce")
+
+
+@router.get("/inventory/mounting-elements")
+def inventory_mounting_elements(
+    request: Request,
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user),
+):
+    return _inventory_by_category_page(request=request, db=db, category="elementy_montazowe", title="Elementy montażowe")
+
+
+@router.get("/inventory/trade-items")
+def inventory_trade_items(
+    request: Request,
+    db: Session = Depends(get_db),
+    _current_user=Depends(get_current_user),
+):
+    return _inventory_by_category_page(request=request, db=db, category="elementy_handlowe", title="Elementy handlowe")
+
+
 @router.get("/inventory/new")
 def new_material_form(request: Request, _current_user=Depends(get_current_user)):
+    selected_category = request.query_params.get("category", "").strip()
+    if selected_category not in INVENTORY_CATEGORIES:
+        selected_category = "surowce"
     return templates.TemplateResponse(
         "inventory_new.html",
         {
@@ -84,6 +141,7 @@ def new_material_form(request: Request, _current_user=Depends(get_current_user))
             "categories": INVENTORY_CATEGORIES,
             "stock_units": STOCK_UNITS,
             "purchase_pricing_modes": PURCHASE_PRICING_MODES,
+            "selected_category": selected_category,
             "current_user": request.state.current_user,
         },
     )
@@ -113,6 +171,8 @@ def create_material(
     existing = db.scalar(select(Material).where(Material.code == code.strip()))
     if existing:
         raise HTTPException(status_code=400, detail="Materiał o podanym kodzie już istnieje.")
+    if category.strip() not in INVENTORY_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Niepoprawna kategoria materiału.")
 
     stock_unit_value = stock_unit.strip() or unit.strip()
     material = Material(

@@ -24,6 +24,26 @@
 </section>
 
 <section class="card">
+    <div class="row-between">
+        <h2>Konstrukcje / konfiguracje</h2>
+        <a class="btn" href="/orders/{{ order.id }}/structures/new">Dodaj konfigurację konstrukcji</a>
+    </div>
+
+    {% for config in order_structure_configs %}
+        <article style="border: 1px solid rgba(148,163,184,.3); border-radius: 10px; padding: 12px; margin-bottom: 10px;">
+            <p><strong>{{ config.name }}</strong> — {{ config.template.name }}</p>
+            <p>Długość: {{ '%.2f'|format(config.length_m) }} m | Wysokość: {{ '%.2f'|format(config.height_m) }} m</p>
+            <p><span class="status-badge status-full">wygenerowano materiały</span></p>
+            <div style="max-width: 920px; overflow-x: auto; background: rgba(15,23,42,.6); padding: 8px; border-radius: 8px;">
+                {{ config.svg_preview | safe }}
+            </div>
+        </article>
+    {% else %}
+        <p class="text-muted">Brak zapisanych konfiguracji konstrukcji.</p>
+    {% endfor %}
+</section>
+
+<section class="card">
     <h2>Materiały zlecenia</h2>
     <form class="form-grid" method="post" action="/orders/{{ order.id }}/materials/add">
         <label>Materiał
