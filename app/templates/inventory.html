@@ -14,7 +14,7 @@
                     <th>Kod</th>
                     <th>Nazwa</th>
                     <th>Kategoria</th>
-                    <th>Jednostka</th>
+                    <th>Jednostka magazynowa</th>
                     <th>Stan fizyczny</th>
                     <th>Zarezerwowane</th>
                     <th>Dostępne</th>
@@ -28,18 +28,13 @@
                     <td>{{ material.code }}</td>
                     <td>{{ material.name }}</td>
                     <td>{{ material.category }}</td>
-                    <td>{{ material.unit }}</td>
+                    <td>{{ material.stock_unit or material.unit }}</td>
                     {% set physical_qty, reserved_qty, available_qty = material_states.get(material.id, (0, 0, 0)) %}
                     <td>{{ "%.2f"|format(physical_qty) }}</td>
                     <td>{{ "%.2f"|format(reserved_qty) }}</td>
                     <td>{{ "%.2f"|format(available_qty) }}</td>
                     <td>
-                        {% set last_price = latest_prices.get(material.id) %}
-                        {% if last_price %}
-                            {{ "%.2f"|format(last_price.price) }} {{ last_price.currency }}
-                        {% else %}
-                            —
-                        {% endif %}
+                        {{ latest_prices_display.get(material.id, "brak ceny") }}
                     </td>
                     <td><a href="/inventory/{{ material.id }}">Otwórz</a></td>
                 </tr>

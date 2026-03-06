@@ -20,7 +20,7 @@
             </select>
         </label>
 
-        <label>Jednostka
+        <label>Jednostka (legacy)
             <select name="unit" required>
                 <option value="mb">mb</option>
                 <option value="szt">szt</option>
@@ -31,6 +31,73 @@
         <label>Cena początkowa (opcjonalnie)
             <input name="initial_price" type="number" step="0.01" min="0" placeholder="np. 12.50">
         </label>
+
+        <h2 style="grid-column: 1 / -1; margin-bottom: 0;">Parametry techniczne</h2>
+
+        <label>Szerokość [mm]
+            <input name="width_mm" type="number" step="0.01" min="0">
+        </label>
+
+        <label>Wysokość [mm]
+            <input name="height_mm" type="number" step="0.01" min="0">
+        </label>
+
+        <label>Grubość [mm]
+            <input name="thickness_mm" type="number" step="0.01" min="0">
+        </label>
+
+        <label>Średnica [mm]
+            <input name="diameter_mm" type="number" step="0.01" min="0">
+        </label>
+
+        <label>Gatunek
+            <input name="grade" maxlength="50" placeholder="np. S235">
+        </label>
+
+        <label>Wykończenie
+            <input name="finish" maxlength="50" placeholder="np. ocynk / malowane">
+        </label>
+
+        <label>Masa 1 mb [kg]
+            <input name="weight_per_meter_kg" type="number" step="0.001" min="0">
+        </label>
+
+        <label>Masa 1 szt [kg]
+            <input name="weight_per_piece_kg" type="number" step="0.001" min="0">
+        </label>
+
+        <label>Długość handlowa [m]
+            <input name="trade_length_m" type="number" step="0.001" min="0">
+        </label>
+
+        <label>Jednostka magazynowa
+            <select name="stock_unit">
+                <option value="">(jak jednostka legacy)</option>
+                {% for stock_unit in stock_units %}
+                    <option value="{{ stock_unit }}">{{ stock_unit }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>Tryb ceny zakupu
+            <select name="purchase_pricing_mode">
+                <option value="">(brak)</option>
+                {% for mode in purchase_pricing_modes %}
+                    {% if mode == 'per_kg' %}
+                    <option value="per_kg">za kg</option>
+                    {% elif mode == 'per_mb' %}
+                    <option value="per_mb">za mb</option>
+                    {% elif mode == 'per_piece' %}
+                    <option value="per_piece">za szt</option>
+                    {% else %}
+                    <option value="mixed">mieszany</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </label>
+
+        <p style="grid-column: 1 / -1; margin: 0;" class="text-muted">Jeśli kupujesz profil po kg, uzupełnij masę 1 mb.</p>
+        <p style="grid-column: 1 / -1; margin: 0;" class="text-muted">Jeśli materiał ma długość handlową, uzupełnij długość handlową.</p>
 
         <button type="submit">Zapisz materiał</button>
     </form>
