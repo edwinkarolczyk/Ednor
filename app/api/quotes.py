@@ -360,35 +360,6 @@ def quote_history(quote_id: int, request: Request, db: Session = Depends(get_db)
     )
 
 
-@router.post("/quotes/{quote_id}/version")
-def quote_add_version(
-    quote_id: int,
-    description: str = Form(""),
-    total_net: float = Form(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    quote = db.get(Quote, quote_id)
-    if not quote:
-        raise HTTPException(status_code=404)
-
-    version_no = (db.scalar(select(func.max(QuoteVersion.version_no)).where(QuoteVersion.quote_id == quote_id)) or 0) + 1
-
-    version = QuoteVersion(
-        quote_id=quote_id,
-        version_no=version_no,
-        description=description or None,
-        total_net=total_net,
-        subtotal_net=total_net,
-    )
-
-    db.add(version)
-    db.commit()
-
-    return RedirectResponse(f"/quotes/{quote_id}", status_code=303)
-
-
 @router.post("/quotes/{quote_id}/accept/{version_id}")
 def quote_accept_version(
     quote_id: int,
@@ -406,7 +377,6 @@ def quote_accept_version(
         raise HTTPException(status_code=404, detail="Wersja wyceny nie istnieje")
 
     quote.status = "accepted"
-    quote.accepted_version_id = version_id
 
     existing = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
     if existing:
@@ -427,46 +397,6 @@ def quote_send(quote_id: int, db: Session = Depends(get_db), current_user: User 
     if not quote:
         raise HTTPException(status_code=404)
     quote.status = "sent"
-    db.commit()
-    return RedirectResponse(url=f"/quotes/{quote_id}", status_code=303)
-
-
-@router.post("/quotes/{quote_id}/accept")
-def quote_accept(
-    quote_id: int,
-    accepted_by_name: str = Form(""),
-    note: str = Form(""),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    quote = db.get(Quote, quote_id)
-    if not quote:
-        raise HTTPException(status_code=404)
-
-    accepted_version = db.scalar(
-        select(QuoteVersion).where(QuoteVersion.quote_id == quote_id).order_by(QuoteVersion.version_no.desc())
-    )
-    if not accepted_version:
-        raise HTTPException(status_code=400, detail="Brak wersji wyceny")
-
-    existing = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
-    if existing:
-        existing.accepted_version_id = accepted_version.id
-        existing.accepted_at = datetime.utcnow()
-        existing.accepted_by_name = accepted_by_name or None
-        existing.note = note or None
-    else:
-        db.add(
-            QuoteAcceptance(
-                quote_id=quote_id,
-                accepted_version_id=accepted_version.id,
-                accepted_by_name=accepted_by_name or None,
-                note=note or None,
-            )
-        )
-    quote.status = "accepted"
-    quote.accepted_version_id = accepted_version.id
     db.commit()
     return RedirectResponse(url=f"/quotes/{quote_id}", status_code=303)
 
@@ -496,12 +426,10 @@ def quote_create_order(
     if quote.status != "accepted":
         raise HTTPException(status_code=400, detail="Wycena nie jest zaakceptowana")
 
-    accepted_version_id = quote.accepted_version_id
-    if not accepted_version_id:
-        acceptance = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
-        if not acceptance:
-            raise HTTPException(status_code=400, detail="Brak rekordu akceptacji")
-        accepted_version_id = acceptance.accepted_version_id
+    acceptance = db.scalar(select(QuoteAcceptance).where(QuoteAcceptance.quote_id == quote_id))
+    if not acceptance:
+        raise HTTPException(status_code=400, detail="Brak rekordu akceptacji")
+    accepted_version_id = acceptance.accepted_version_id
 
     order = Order(
         order_no=_next_order_no(db),

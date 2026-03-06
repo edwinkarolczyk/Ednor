@@ -188,7 +188,6 @@ class Quote(Base):
     customer_name: Mapped[str] = mapped_column(Text, nullable=False)
     site_address_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
-    accepted_version_id: Mapped[int | None] = mapped_column(ForeignKey("quote_versions.id"), nullable=True, index=True)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -322,7 +321,6 @@ def init_db(hash_password_fn):
     Base.metadata.create_all(bind=engine)
 
     # SQLite auto-migrations for columns introduced after initial deployment.
-    _ensure_columns("quotes", [("accepted_version_id", "INTEGER", None)])
     _ensure_columns("quote_versions", [("description", "TEXT", "''")])
     _ensure_columns("pricing_quotes", [("use_manual_labor", "BOOLEAN", "0")])
     _ensure_columns(
@@ -367,7 +365,6 @@ def init_db(hash_password_fn):
             "deposit_required",
             "materials_check_required",
         },
-        "quotes": {"accepted_version_id"},
         "quote_versions": {"description"},
         "pricing_quotes": {"use_manual_labor"},
         "quote_lines": {"line_type", "quote_version_id"},
