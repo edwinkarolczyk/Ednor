@@ -351,6 +351,10 @@ class OrderMaterial(Base):
     material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False, index=True)
     qty_required: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     qty_reserved: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    material_status: Mapped[str] = mapped_column(String(20), nullable=False, default="missing")
+    source_config_id: Mapped[int | None] = mapped_column(ForeignKey("order_structure_configs.id"), nullable=True, index=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -398,6 +402,9 @@ class OrderStructureConfig(Base):
     rails_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     gates_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     wickets_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    materials_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reservation_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     raw_result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     svg_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
@@ -534,6 +541,24 @@ def init_db(hash_password_fn):
             ("started_at", "DATETIME", None),
             ("ended_at", "DATETIME", None),
             ("duration_minutes", "INTEGER", "0"),
+        ],
+    )
+
+    _ensure_columns(
+        "order_materials",
+        [
+            ("unit_price", "REAL", None),
+            ("total_cost", "REAL", None),
+            ("material_status", "TEXT", "'missing'"),
+            ("source_config_id", "INTEGER", None),
+        ],
+    )
+    _ensure_columns(
+        "order_structure_configs",
+        [
+            ("materials_cost", "REAL", None),
+            ("estimated_weight_kg", "REAL", None),
+            ("reservation_status", "TEXT", None),
         ],
     )
 
