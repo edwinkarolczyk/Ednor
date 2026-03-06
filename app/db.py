@@ -259,6 +259,67 @@ class Payment(Base):
     order: Mapped[Order] = relationship("Order", back_populates="payments")
 
 
+INVENTORY_CATEGORIES = ["profile", "rury", "blacha", "drut", "elektrody", "inne"]
+
+
+class Material(Base):
+    __tablename__ = "materials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    prices: Mapped[list["MaterialPrice"]] = relationship(
+        "MaterialPrice", back_populates="material", cascade="all, delete-orphan"
+    )
+    stock_row: Mapped["Stock | None"] = relationship(
+        "Stock", back_populates="material", uselist=False, cascade="all, delete-orphan"
+    )
+    moves: Mapped[list["StockMove"]] = relationship(
+        "StockMove", back_populates="material", cascade="all, delete-orphan"
+    )
+
+
+class MaterialPrice(Base):
+    __tablename__ = "material_prices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False, index=True)
+    price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="PLN")
+    valid_from: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    material: Mapped["Material"] = relationship("Material", back_populates="prices")
+
+
+class Stock(Base):
+    __tablename__ = "stock"
+
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), primary_key=True)
+    qty_on_hand: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+
+    material: Mapped["Material"] = relationship("Material", back_populates="stock_row")
+
+
+class StockMove(Base):
+    __tablename__ = "stock_moves"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False, index=True)
+    move_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    qty: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    material: Mapped["Material"] = relationship("Material", back_populates="moves")
+
+
 class FenceTemplate(Base):
     __tablename__ = "fence_templates"
 
@@ -354,6 +415,10 @@ def init_db(hash_password_fn):
         "payments",
         "pricing_quotes",
         "quote_lines",
+        "materials",
+        "material_prices",
+        "stock",
+        "stock_moves",
         "fence_templates",
         "fence_quote_inputs",
         "time_entries",

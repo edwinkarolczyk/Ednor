@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="card narrow">
+    <h1>Nowy materiał</h1>
+    <form method="post" class="form-grid">
+        <label>Kod
+            <input name="code" required maxlength="80" placeholder="np. PROF-20x20">
+        </label>
+
+        <label>Nazwa
+            <input name="name" required placeholder="Pełna nazwa materiału">
+        </label>
+
+        <label>Kategoria
+            <select name="category" required>
+                {% for category in categories %}
+                    <option value="{{ category }}">{{ category }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label>Jednostka
+            <select name="unit" required>
+                <option value="mb">mb</option>
+                <option value="szt">szt</option>
+                <option value="kg">kg</option>
+            </select>
+        </label>
+
+        <label>Cena początkowa (opcjonalnie)
+            <input name="initial_price" type="number" step="0.01" min="0" placeholder="np. 12.50">
+        </label>
+
+        <button type="submit">Zapisz materiał</button>
+    </form>
+</section>
+{% endblock %}

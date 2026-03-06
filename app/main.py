@@ -10,6 +10,8 @@ from sqlalchemy.orm import joinedload
 from app.api.auth import router as auth_router
 from app.api.auth import set_templates as auth_set_templates
 from app.api.health import router as health_router
+from app.api.inventory import router as inventory_router
+from app.api.inventory import set_templates as inventory_set_templates
 from app.api.orders import router as orders_router
 from app.api.orders import set_templates as orders_set_templates
 from app.api.pricing import router as pricing_router
@@ -34,6 +36,7 @@ orders_set_templates(templates)
 pricing_set_templates(templates)
 quotes_set_templates(templates)
 users_set_templates(templates)
+inventory_set_templates(templates)
 
 
 @app.middleware("http")
@@ -70,6 +73,7 @@ app.include_router(orders_router)
 app.include_router(pricing_router)
 app.include_router(quotes_router)
 app.include_router(users_router)
+app.include_router(inventory_router)
 app.include_router(time_router)
 
 

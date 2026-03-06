@@ -7,38 +7,23 @@
 
     <h2>Etapy projektu</h2>
     <ul class="status-list">
-        <li class="status-done">✅ Etap 1 — WEB skeleton</li>
-        <li class="status-done">✅ Etap 2 — logowanie + role + podstawowe zlecenia</li>
-        <li class="status-done">✅ Etap 3 — wyceny + ogrodzenia v1 + PDF</li>
-        <li class="status-done">✅ Etap 3.5 — time tracking START/STOP</li>
-        <li class="status-in-progress">🟡 Etap 3.6 — Model B: wycena → akceptacja → zaliczka → zlecenie</li>
-        <li class="status-planned">⬜ Etap 4 — magazyn + historia cen + rezerwacje</li>
-        <li class="status-planned">⬜ Etap 5 — produkcja</li>
-        <li class="status-planned">⬜ Etap 6 — kalendarz globalny</li>
-        <li class="status-planned">⬜ Etap 7 — raporty</li>
+        <li class="status-done">[x] Etap 1 — WEB skeleton</li>
+        <li class="status-done">[x] Etap 2 — logowanie + role + podstawowe zlecenia</li>
+        <li class="status-done">[x] Etap 3 — wyceny + ogrodzenia v1 + PDF</li>
+        <li class="status-done">[x] Etap 3.5 — time tracking START/STOP</li>
+        <li class="status-done">[x] Etap 3.6 — Model B: wycena -> akceptacja -> zaliczka -> zlecenie</li>
+        <li class="status-in-progress">[~] Etap 4A — magazyn: materiały + historia cen + stany + dostawy</li>
+        <li class="status-planned">[ ] Etap 4B — rezerwacje pod zlecenie</li>
+        <li class="status-planned">[ ] Etap 4C — blokada startu produkcji bez materiału</li>
+        <li class="status-planned">[ ] Etap 5 — produkcja</li>
+        <li class="status-planned">[ ] Etap 6 — kalendarz globalny</li>
+        <li class="status-planned">[ ] Etap 7 — raporty</li>
     </ul>
 
     <h2>Aktualnie robimy</h2>
-    <p><strong>Etap 3.6 — uporządkowanie procesu:</strong><br>Wycena → Akceptacja → Zaliczka → Zlecenie</p>
-    <p><strong>Następny krok:</strong><br>Etap 3.6C — zaliczka i statusy płatności</p>
+    <p><strong>Etap 4A — fundament magazynu:</strong><br>Materiały -> ceny -> stany -> dostawy</p>
 
-    <h2>Dostępne moduły</h2>
-    <p><strong>Dostępne moduły:</strong></p>
-    <ul>
-        <li>Użytkownicy</li>
-        <li>Zlecenia</li>
-        <li>Wyceny</li>
-        <li>Time tracking</li>
-        <li>PDF wyceny</li>
-    </ul>
-
-    <p><strong>Planowane moduły:</strong></p>
-    <ul>
-        <li>Magazyn</li>
-        <li>Produkcja</li>
-        <li>Kalendarz</li>
-        <li>Raporty</li>
-    </ul>
+    <p><strong>Następny krok:</strong><br>Etap 4B — rezerwacje materiałów pod zlecenie</p>
 
     {% if not request.state.current_user %}
     <a class="btn" href="/login">Zaloguj się</a>
