@@ -1,12 +1,18 @@
 {% extends "layout.html" %}
 
 {% block content %}
-
+{% set quote_status_map = {
+    "draft": "Szkic",
+    "sent": "Wysłana",
+    "accepted": "Zaakceptowana",
+    "rejected": "Odrzucona",
+    "cancelled": "Anulowana"
+} %}
 <h2>Wycena {{ quote.quote_no }}</h2>
 
 <p>Klient: {{ quote.customer_name }}</p>
 <p>Adres: {{ quote.site_address_text }}</p>
-<p>Status: {{ quote.status }}</p>
+<p>Status: {{ quote_status_map.get(quote.status, quote.status) }}</p>
 {% if quote.acceptance %}
 <p>Zaakceptowana wersja: <strong>{{ quote.acceptance.accepted_version.version_no }}</strong></p>
 {% endif %}
@@ -30,7 +36,7 @@
         <td>{{ '%.2f'|format(v.total_net) }}</td>
         <td>
             <form method="post" action="/quotes/{{ quote.id }}/accept/{{ v.id }}">
-                <button type="submit">Akceptuj</button>
+                <button type="submit">Akceptuj wycenę</button>
             </form>
         </td>
     </tr>
@@ -38,7 +44,7 @@
 </table>
 
 <p>
-    <a href="/quotes/{{ quote.id }}/pricing">Nowa wersja wyceny</a>
+    <a href="/quotes/{{ quote.id }}/pricing">Utwórz wersję wyceny</a>
 </p>
 
 {% if quote.status == "accepted" %}
@@ -50,6 +56,6 @@
 </form>
 {% endif %}
 
-<p><a href="/quotes">← wróć</a></p>
+<p><a href="/quotes">← Wróć</a></p>
 
 {% endblock %}

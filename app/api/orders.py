@@ -62,7 +62,7 @@ def orders_page(
     current_user: User = Depends(get_current_user),
 ):
     if not _is_admin(current_user):
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="Brak dostępu")
     orders = db.scalars(select(Order).order_by(Order.created_at.desc())).all()
     return templates.TemplateResponse(
         "orders.html",
@@ -73,7 +73,7 @@ def orders_page(
 @router.get("/orders/new")
 def new_order_form(request: Request, current_user: User = Depends(get_current_user)):
     if not _is_admin(current_user):
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="Brak dostępu")
     return templates.TemplateResponse(
         "order_new.html", {"request": request, "page_title": "Nowe zlecenie", "current_user": request.state.current_user}
     )
@@ -89,7 +89,7 @@ def create_order(
     current_user: User = Depends(get_current_user),
 ):
     if not _is_admin(current_user):
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="Brak dostępu")
 
     order = Order(
         order_no=_next_order_no(db),
@@ -113,14 +113,14 @@ def order_detail(
 ):
     order = db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono zlecenia")
 
     if not _is_admin(current_user):
         assigned = db.scalar(
             select(OrderAssignment).where(OrderAssignment.order_id == order_id, OrderAssignment.user_id == current_user.id)
         )
         if not assigned:
-            raise HTTPException(status_code=403)
+            raise HTTPException(status_code=403, detail="Brak dostępu")
 
     assignments = db.scalars(
         select(OrderAssignment)
@@ -172,7 +172,7 @@ def assign_user(
     current_user: User = Depends(get_current_user),
 ):
     if not _is_admin(current_user):
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="Brak dostępu")
     assignment = OrderAssignment(order_id=order_id, user_id=user_id, role_code=role_code, note=note or None)
     db.add(assignment)
     db.commit()
@@ -189,15 +189,15 @@ def mark_payment_paid(
     current_user: User = Depends(get_current_user),
 ):
     if not _is_admin(current_user):
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="Brak dostępu")
 
     order = db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono zlecenia")
 
     payment = db.get(Payment, payment_id)
     if not payment or payment.order_id != order_id:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono")
 
     payment.status = "paid"
     payment.paid_at = datetime.utcnow()
@@ -218,7 +218,7 @@ async def upload_order_file(
 ):
     order = db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono zlecenia")
 
     target_dir = UPLOADS_DIR / str(order_id)
     target_dir.mkdir(parents=True, exist_ok=True)

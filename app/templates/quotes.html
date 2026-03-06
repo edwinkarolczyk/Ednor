@@ -1,10 +1,16 @@
 {% extends "layout.html" %}
 
 {% block content %}
-
+{% set quote_status_map = {
+    "draft": "Szkic",
+    "sent": "Wysłana",
+    "accepted": "Zaakceptowana",
+    "rejected": "Odrzucona",
+    "cancelled": "Anulowana"
+} %}
 <h2>Wyceny</h2>
 
-<a href="/quotes/new">Nowa wycena</a>
+<a href="/quotes/new">Utwórz wycenę</a>
 
 <table>
     <tr>
@@ -18,7 +24,7 @@
     <tr>
         <td>{{ q.id }}</td>
         <td>{{ q.customer_name }}</td>
-        <td>{{ q.status }}</td>
+        <td>{{ quote_status_map.get(q.status, q.status) }}</td>
         <td><a href="/quotes/{{ q.id }}">Otwórz</a></td>
     </tr>
     {% endfor %}

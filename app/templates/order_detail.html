@@ -1,16 +1,33 @@
 {% extends "layout.html" %}
 
 {% block content %}
+{% set order_status_map = {
+    "awaiting_deposit": "Oczekiwanie na zaliczkę",
+    "awaiting_materials": "Oczekiwanie na materiały",
+    "ready_for_production": "Gotowe do produkcji",
+    "in_production": "W produkcji",
+    "ready_for_installation": "Gotowe do montażu",
+    "in_installation": "W montażu",
+    "completed": "Zrealizowane",
+    "cancelled": "Anulowane",
+    "priced": "Wycena gotowa",
+    "draft": "Szkic"
+} %}
+{% set payment_status_map = {
+    "planned": "Zaplanowana",
+    "paid": "Opłacona",
+    "overdue": "Przeterminowana"
+} %}
+{% set payment_type_map = {
+    "deposit": "Zaliczka",
+    "final": "Płatność końcowa",
+    "other": "Inna płatność"
+} %}
 <section class="card">
     <h1>Zlecenie #{{ order.order_no }} — {{ order.title }}</h1>
     <p>Klient: {{ order.client_name or '-' }}</p>
     <p>Adres: {{ order.address or '-' }}</p>
-    <p>Status zlecenia: <strong>{{ order.status }}</strong></p>
-    {% if order.status == "awaiting_deposit" %}
-    <p><small>Oczekiwanie na zaliczkę</small></p>
-    {% elif order.status == "awaiting_materials" %}
-    <p><small>Oczekiwanie na materiał</small></p>
-    {% endif %}
+    <p>Status zlecenia: <strong>{{ order_status_map.get(order.status, order.status) }}</strong></p>
 
     {% if order.source_quote_id %}
     <p>Źródło: wycena #{{ order.source_quote_id }}{% if order.accepted_quote_version_id %} (wersja ID {{ order.accepted_quote_version_id }}){% endif %}</p>
@@ -27,9 +44,9 @@
 <section class="card" data-time-tracker data-order-id="{{ order.id }}">
     <h2>Montaż – czas pracy</h2>
     <div class="time-actions">
-        <button type="button" class="btn" data-time-start>START</button>
-        <button type="button" class="btn" data-time-stop hidden>STOP</button>
-        <span class="badge" data-time-running-status>STOPPED</span>
+        <button type="button" class="btn" data-time-start>Start</button>
+        <button type="button" class="btn" data-time-stop hidden>Stop</button>
+        <span class="badge" data-time-running-status>ZATRZYMANO</span>
     </div>
     <p>Twój czas montażu: <strong data-user-total>0h 0m</strong></p>
     <p>Łącznie montaż: <strong data-order-total>0h 0m</strong></p>
@@ -65,15 +82,15 @@
 
 <section class="card">
     <h2>Płatności</h2>
-    <p>Etap 3.6: po opłaceniu zaliczki zlecenie przechodzi do statusu <strong>awaiting_materials</strong> (bramka magazynu w Etapie 4).</p>
+    <p>Po opłaceniu zaliczki zlecenie przechodzi do statusu <strong>Oczekiwanie na materiały</strong>.</p>
     <table>
         <thead><tr><th>Typ</th><th>Kwota</th><th>Status</th><th>Data opłaty</th><th></th></tr></thead>
         <tbody>
         {% for payment in order.payments %}
             <tr>
-                <td>{{ payment.payment_type }}</td>
+                <td>{{ payment_type_map.get(payment.payment_type, payment.payment_type) }}</td>
                 <td>{{ '%.2f'|format(payment.amount) }} zł</td>
-                <td>{{ payment.status }}</td>
+                <td>{{ payment_status_map.get(payment.status, payment.status) }}</td>
                 <td>{% if payment.paid_at %}{{ payment.paid_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
                 <td>
                     {% if is_admin and payment.status != 'paid' %}
@@ -119,7 +136,7 @@
 </section>
 
 <section class="card">
-    <h2>Upload (placeholder)</h2>
+    <h2>Przesyłanie plików</h2>
     <form class="upload-form" action="/api/orders/{{ order.id }}/upload" method="post" enctype="multipart/form-data">
         <input name="file" type="file" required>
         <button type="submit">Wyślij plik</button>

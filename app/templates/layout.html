@@ -12,7 +12,7 @@
     <div class="brand">Ednor</div>
     <button class="menu-toggle" aria-label="Pokaż menu" aria-expanded="false">☰</button>
     <nav class="menu" id="main-menu">
-        <a href="/">Start</a>
+        <a href="/">Strona główna</a>
         {% if request.state.current_user %}
             <a href="/my-orders">Moje zlecenia</a>
             {% set role_codes = request.state.current_user.roles | map(attribute='code') | list %}

@@ -89,7 +89,7 @@ def material_detail(
 ):
     material = db.scalar(select(Material).where(Material.id == material_id))
     if not material:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono materiału")
 
     stock_row = db.get(Stock, material_id)
     if not stock_row:
@@ -128,7 +128,7 @@ def add_delivery(
 ):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono materiału")
 
     stock_row = db.get(Stock, material_id)
     if not stock_row:
@@ -153,7 +153,7 @@ def adjust_stock(
 ):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Nie znaleziono materiału")
 
     stock_row = db.get(Stock, material_id)
     if not stock_row:

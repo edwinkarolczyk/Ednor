@@ -17,24 +17,24 @@
         </tr>
         </thead>
         <tbody>
+        {% set status_map = {
+            "awaiting_deposit": "Oczekiwanie na zaliczkę",
+            "awaiting_materials": "Oczekiwanie na materiały",
+            "ready_for_production": "Gotowe do produkcji",
+            "in_production": "W produkcji",
+            "ready_for_installation": "Gotowe do montażu",
+            "in_installation": "W montażu",
+            "completed": "Zrealizowane",
+            "cancelled": "Anulowane",
+            "priced": "Wycena gotowa",
+            "draft": "Szkic"
+        } %}
         {% for order in orders %}
         <tr>
             <td>{{ order.order_no }}</td>
             <td>{{ order.title }}</td>
             <td>{{ order.client_name or '-' }}</td>
-            <td>
-                {% if order.status == "priced" %}
-                    <span class="badge">Wycena gotowa</span>
-                {% elif order.status == "draft" %}
-                    <span class="badge">Szkic</span>
-                {% elif order.status == "awaiting_deposit" %}
-                    <span class="badge">Oczekiwanie na zaliczkę</span>
-                {% elif order.status == "awaiting_materials" %}
-                    <span class="badge">Oczekiwanie na materiał</span>
-                {% else %}
-                    {{ order.status }}
-                {% endif %}
-            </td>
+            <td><span class="badge">{{ status_map.get(order.status, order.status) }}</span></td>
             <td><a href="/orders/{{ order.id }}">Szczegóły</a></td>
         </tr>
         {% endfor %}

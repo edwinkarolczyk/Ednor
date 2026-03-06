@@ -40,9 +40,19 @@ function renderTimeStatus(container, payload) {
   const isRunning = Boolean(payload.running);
   startBtn.hidden = isRunning;
   stopBtn.hidden = !isRunning;
-  status.textContent = isRunning ? 'RUNNING' : 'STOPPED';
+  status.textContent = isRunning ? 'W TRAKCIE' : 'ZATRZYMANO';
   userTotal.textContent = formatMinutes(payload.user_total_minutes);
   orderTotal.textContent = formatMinutes(payload.order_total_minutes);
+}
+
+
+function translateTimerError(errorCode) {
+  const errorMap = {
+    order_status_not_allowed: 'Status zlecenia nie pozwala na uruchomienie timera.',
+    active_timer_exists: 'Masz już uruchomiony timer dla innego zlecenia.',
+    no_active_timer: 'Brak aktywnego timera do zatrzymania.',
+  };
+  return errorMap[errorCode] || 'Wystąpił błąd.';
 }
 
 async function initOrderTimer() {
@@ -65,7 +75,7 @@ async function initOrderTimer() {
   startBtn.addEventListener('click', async () => {
     const payload = await startTimer(orderId);
     if (!payload.ok) {
-      alert(`Nie udało się uruchomić timera: ${payload.error || 'błąd'}`);
+      alert(`Nie udało się uruchomić timera: ${translateTimerError(payload.error)}`);
       return;
     }
     await refresh();
@@ -74,7 +84,7 @@ async function initOrderTimer() {
   stopBtn.addEventListener('click', async () => {
     const payload = await stopTimer(orderId);
     if (!payload.ok) {
-      alert(`Nie udało się zatrzymać timera: ${payload.error || 'błąd'}`);
+      alert(`Nie udało się zatrzymać timera: ${translateTimerError(payload.error)}`);
       return;
     }
     await refresh();

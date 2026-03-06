@@ -1,6 +1,13 @@
 {% extends "layout.html" %}
 
 {% block content %}
+{% set move_type_map = {
+    "in": "Dostawa",
+    "adjust": "Korekta stanu",
+    "reserved": "Zarezerwowane",
+    "released": "Zwolnione",
+    "consumed": "Zużyte"
+} %}
 <section class="card">
     <h1>Materiał: {{ material.code }}</h1>
 
@@ -10,7 +17,7 @@
         <li><strong>Nazwa:</strong> {{ material.name }}</li>
         <li><strong>Kategoria:</strong> {{ material.category }}</li>
         <li><strong>Jednostka:</strong> {{ material.unit }}</li>
-        <li><strong>Bieżący stan:</strong> {{ "%.2f"|format(stock_row.qty_on_hand) }}</li>
+        <li><strong>Stan fizyczny:</strong> {{ "%.2f"|format(stock_row.qty_on_hand) }}</li>
     </ul>
 </section>
 
@@ -90,7 +97,7 @@
             {% for move in moves %}
                 <tr>
                     <td>{{ move.created_at.strftime('%Y-%m-%d %H:%M') if move.created_at else '—' }}</td>
-                    <td>{{ move.move_type }}</td>
+                    <td>{{ move_type_map.get(move.move_type, move.move_type) }}</td>
                     <td>{{ "%.2f"|format(move.qty) }}</td>
                     <td>{% if move.unit_price is not none %}{{ "%.2f"|format(move.unit_price) }} PLN{% else %}—{% endif %}</td>
                     <td>{{ move.note or '—' }}</td>
