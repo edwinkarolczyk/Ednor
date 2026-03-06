@@ -36,19 +36,21 @@
                     <th>Zlecenie</th>
                     <th>Ilość</th>
                     <th>Status</th>
+                    <th>Notatka</th>
                     <th>Data</th>
                 </tr>
             </thead>
             <tbody>
             {% for reservation in reservations %}
                 <tr>
-                    <td><a href="/orders/{{ reservation.order_id }}">#{{ reservation.order_id }}</a></td>
+                    <td><a href="/orders/{{ reservation.order_id }}">#{% if reservation.order %}{{ reservation.order.order_no }}{% else %}{{ reservation.order_id }}{% endif %}</a></td>
                     <td>{{ "%.2f"|format(reservation.qty_reserved) }}</td>
                     <td>{{ reservation.status }}</td>
+                    <td>{{ reservation.note or '—' }}</td>
                     <td>{{ reservation.created_at.strftime('%Y-%m-%d %H:%M') if reservation.created_at else '—' }}</td>
                 </tr>
             {% else %}
-                <tr><td colspan="4" class="text-muted">Brak rezerwacji.</td></tr>
+                <tr><td colspan="5" class="text-muted">Brak rezerwacji.</td></tr>
             {% endfor %}
             </tbody>
         </table>
