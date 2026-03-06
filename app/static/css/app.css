@@ -127,6 +127,29 @@ th { color: var(--muted); font-weight: 600; }
 .status-in-progress { color: #ffb36e; }
 .status-planned { color: #a9a9a9; }
 
+.status-badge {
+    display: inline-block;
+    padding: .2rem .5rem;
+    border-radius: 999px;
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.status-full {
+    color: #b6ffd1;
+    background: #1f4a33;
+}
+
+.status-partial {
+    color: #ffd5a6;
+    background: #5a3416;
+}
+
+.status-none {
+    color: #ffd0d0;
+    background: #4a1f1f;
+}
+
 @media (max-width: 768px) {
     .menu-toggle { display: inline-block; }
     .menu {

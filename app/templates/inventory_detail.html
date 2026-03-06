@@ -10,8 +10,38 @@
         <li><strong>Nazwa:</strong> {{ material.name }}</li>
         <li><strong>Kategoria:</strong> {{ material.category }}</li>
         <li><strong>Jednostka:</strong> {{ material.unit }}</li>
-        <li><strong>Bieżący stan:</strong> {{ "%.2f"|format(stock_row.qty_on_hand) }}</li>
+        <li><strong>Stan fizyczny:</strong> {{ "%.2f"|format(physical_qty) }}</li>
+        <li><strong>Zarezerwowane:</strong> {{ "%.2f"|format(reserved_qty) }}</li>
+        <li><strong>Dostępne:</strong> {{ "%.2f"|format(available_qty) }}</li>
     </ul>
+</section>
+
+<section class="card">
+    <h2>Rezerwacje</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Zlecenie</th>
+                    <th>Ilość</th>
+                    <th>Status</th>
+                    <th>Data</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for reservation in reservations %}
+                <tr>
+                    <td><a href="/orders/{{ reservation.order_id }}">#{{ reservation.order_id }}</a></td>
+                    <td>{{ "%.2f"|format(reservation.qty_reserved) }}</td>
+                    <td>{{ reservation.status }}</td>
+                    <td>{{ reservation.created_at.strftime('%Y-%m-%d %H:%M') if reservation.created_at else '—' }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="text-muted">Brak rezerwacji.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 
 <section class="card two-col-grid">
