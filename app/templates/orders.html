@@ -31,6 +31,10 @@
                     <span class="badge">Oczekiwanie na zaliczkę</span>
                 {% elif order.status == "awaiting_materials" %}
                     <span class="badge">Oczekiwanie na materiał</span>
+                {% elif order.status == "ready_for_production" %}
+                    <span class="badge">Gotowe do produkcji</span>
+                {% elif order.status == "in_production" %}
+                    <span class="badge">W produkcji</span>
                 {% else %}
                     {{ order.status }}
                 {% endif %}

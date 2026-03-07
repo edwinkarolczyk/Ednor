@@ -16,17 +16,17 @@
         <li class="status-done">[x] Etap 4B — rezerwacje pod zlecenie</li>
         <li class="status-done">[x] Etap 4X — definicja materiału + przeliczniki + fundament pod ogrodzenia</li>
         <li class="status-done">[x] Etap 4Y — konfigurator konstrukcji + wizualizacja 2D</li>
-        <li class="status-in-progress">[~] Etap 4Z — inteligentny BOM + rezerwacja + koszt materiałów</li>
-        <li class="status-planned">[ ] Etap 4C — blokada startu produkcji bez materiału</li>
+        <li class="status-done">[x] Etap 4Z — inteligentny BOM + rezerwacja + koszt materiałów</li>
+        <li class="status-in-progress">[~] Etap 4C — blokada startu produkcji bez materiału</li>
         <li class="status-planned">[ ] Etap 5 — produkcja</li>
         <li class="status-planned">[ ] Etap 6 — kalendarz globalny</li>
         <li class="status-planned">[ ] Etap 7 — raporty</li>
     </ul>
 
     <h2>Aktualnie robimy</h2>
-    <p><strong>Automatyczne liczenie kosztów i rezerwacji materiałów dla konfiguracji</strong></p>
+    <p><strong>Kontrola kompletności materiałów i blokada uruchomienia produkcji</strong></p>
 
-    <p><strong>Następny krok:</strong><br>Blokada rozpoczęcia produkcji bez pełnej rezerwacji materiałów</p>
+    <p><strong>Następny krok:</strong><br>Etap 5 — produkcja (start/stop, czas pracy, postęp realizacji)</p>
 
     {% if not request.state.current_user %}
     <a class="btn" href="/login">Zaloguj się</a>

@@ -4,6 +4,15 @@ from sqlalchemy.orm import Session
 from app.db import Material, MaterialPrice, OrderMaterial, Reservation, Stock
 
 
+ORDER_GATE_LOCKED_STATUSES = {
+    "in_production",
+    "ready_for_installation",
+    "in_installation",
+    "completed",
+    "cancelled",
+}
+
+
 def get_latest_material_unit_price(db: Session, material: Material) -> float | None:
     latest_price = db.scalar(
         select(MaterialPrice)
@@ -100,3 +109,48 @@ def summarize_config_reservation_status(order_materials_for_config: list[OrderMa
     if statuses == {"missing"}:
         return "missing"
     return "partial"
+
+
+def order_materials_complete(order_materials: list[OrderMaterial]) -> bool:
+    if not order_materials:
+        return False
+    return all(material.material_status == "ok" for material in order_materials)
+
+
+def summarize_order_materials_status(order_materials: list[OrderMaterial]) -> str:
+    if not order_materials:
+        return "missing"
+
+    statuses = {material.material_status for material in order_materials}
+    if statuses == {"ok"}:
+        return "ok"
+    if "partial" in statuses:
+        return "partial"
+    if "ok" in statuses and "missing" in statuses:
+        return "partial"
+    return "missing"
+
+
+def can_start_production(order, order_materials: list[OrderMaterial]) -> tuple[bool, str]:
+    if order.status not in {"awaiting_materials", "ready_for_production"}:
+        return False, "Zlecenie nie jest na etapie uruchomienia produkcji"
+
+    if not order_materials:
+        return False, "Nie można rozpocząć produkcji. Brak materiałów przypisanych do zlecenia."
+
+    if not order_materials_complete(order_materials):
+        return False, "Nie można rozpocząć produkcji. Nie wszystkie materiały są w pełni zarezerwowane."
+
+    return True, "Można rozpocząć produkcję."
+
+
+def update_order_gate_status(order, order_materials: list[OrderMaterial]) -> str:
+    if order.status in ORDER_GATE_LOCKED_STATUSES:
+        return order.status
+
+    if order_materials_complete(order_materials):
+        order.status = "ready_for_production"
+    else:
+        order.status = "awaiting_materials"
+
+    return order.status
