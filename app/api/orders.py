@@ -8,7 +8,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import UPLOADS_DIR
-from app.core.order_materials_engine import determine_material_status
+from app.core.order_materials_engine import (
+    can_start_production,
+    determine_material_status,
+    summarize_order_materials_status,
+    update_order_gate_status,
+)
 from app.db import (
     Attachment,
     Material,
@@ -67,6 +72,12 @@ def _build_config_view(config: OrderStructureConfig) -> dict:
         "estimated_weight_kg": config.estimated_weight_kg,
         "reservation_status": config.reservation_status or "missing",
     }
+
+
+def _update_order_material_gate_status(order: Order) -> str:
+    for order_material in order.order_materials:
+        order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
+    return update_order_gate_status(order, order.order_materials)
 
 
 @router.get("/my-orders")
@@ -197,6 +208,14 @@ def order_detail(
         .where(OrderStructureConfig.order_id == order_id)
         .order_by(OrderStructureConfig.created_at.desc())
     ).all()
+
+    _update_order_material_gate_status(order)
+    db.commit()
+    db.refresh(order)
+
+    materials_status_summary = summarize_order_materials_status(order.order_materials)
+    production_can_start, production_start_message = can_start_production(order, order.order_materials)
+
     order_materials_view = [_build_order_material_view(line) for line in order.order_materials]
     order_structure_configs_view = [_build_config_view(config) for config in order_structure_configs]
 
@@ -219,6 +238,9 @@ def order_detail(
             "order_materials": order_materials_view,
             "order_structure_configs": order_structure_configs_view,
             "material_states": material_states,
+            "order_materials_status_summary": materials_status_summary,
+            "production_can_start": production_can_start,
+            "production_start_message": production_start_message,
             "current_user": request.state.current_user,
         },
     )
@@ -281,6 +303,7 @@ def add_material_to_order(
             )
         )
 
+    _update_order_material_gate_status(order)
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
 
@@ -292,6 +315,10 @@ def reserve_order_material(
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ):
+    order = db.scalar(select(Order).options(joinedload(Order.order_materials)).where(Order.id == order_id))
+    if not order:
+        raise HTTPException(status_code=404)
+
     order_material = db.get(OrderMaterial, order_material_id)
     if not order_material or order_material.order_id != order_id:
         raise HTTPException(status_code=404)
@@ -316,6 +343,7 @@ def reserve_order_material(
         order_material.qty_reserved += reserve_qty
 
     order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
+    _update_order_material_gate_status(order)
 
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
@@ -328,6 +356,10 @@ def release_order_material(
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ):
+    order = db.scalar(select(Order).options(joinedload(Order.order_materials)).where(Order.id == order_id))
+    if not order:
+        raise HTTPException(status_code=404)
+
     order_material = db.get(OrderMaterial, order_material_id)
     if not order_material or order_material.order_id != order_id:
         raise HTTPException(status_code=404)
@@ -344,9 +376,30 @@ def release_order_material(
 
     order_material.qty_reserved = 0
     order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
+    _update_order_material_gate_status(order)
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
 
+
+@router.post("/orders/{order_id}/start-production")
+def start_production(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    order = db.scalar(select(Order).options(joinedload(Order.order_materials)).where(Order.id == order_id))
+    if not order:
+        raise HTTPException(status_code=404, detail="Nie znaleziono zlecenia.")
+
+    _update_order_material_gate_status(order)
+    can_start, _message = can_start_production(order, order.order_materials)
+    if not can_start:
+        db.commit()
+        return RedirectResponse(url=f"/orders/{order_id}?production_error=not_ready", status_code=303)
+
+    order.status = "in_production"
+    db.commit()
+    return RedirectResponse(url=f"/orders/{order_id}?production_started=1", status_code=303)
 
 
 

@@ -10,6 +10,10 @@
     <p><small>Oczekiwanie na zaliczkę</small></p>
     {% elif order.status == "awaiting_materials" %}
     <p><small>Oczekiwanie na materiał</small></p>
+    {% elif order.status == "ready_for_production" %}
+    <p><small>Gotowe do produkcji</small></p>
+    {% elif order.status == "in_production" %}
+    <p><small>W produkcji</small></p>
     {% endif %}
 
     {% if order.source_quote_id %}
@@ -61,8 +65,52 @@
     {% endfor %}
 </section>
 
+
+<section class="card">
+    <h2>PRODUKCJA</h2>
+    <p>Status gotowości materiałowej:
+        {% if order_materials_status_summary == "ok" %}
+            <strong>Produkcję można uruchomić</strong>
+        {% else %}
+            <strong>Brak gotowości do produkcji</strong>
+        {% endif %}
+    </p>
+
+    {% if request.query_params.get("production_started") == "1" %}
+        <p><strong>Produkcja została rozpoczęta.</strong></p>
+    {% elif request.query_params.get("production_error") == "not_ready" %}
+        <p><strong>{{ production_start_message }}</strong></p>
+    {% elif order.status == "ready_for_production" %}
+        <p><strong>Materiały są kompletne. Można rozpocząć produkcję.</strong></p>
+    {% elif order.status == "awaiting_materials" %}
+        <p><strong>Nie można rozpocząć produkcji. Nie wszystkie materiały są w pełni zarezerwowane.</strong></p>
+    {% elif order.status == "in_production" %}
+        <p><strong>Produkcja została rozpoczęta.</strong></p>
+    {% else %}
+        <p><strong>{{ production_start_message }}</strong></p>
+    {% endif %}
+
+    <form method="post" action="/orders/{{ order.id }}/start-production">
+        {% if order.status == "ready_for_production" and production_can_start %}
+            <button type="submit">Rozpocznij produkcję</button>
+        {% else %}
+            <button type="submit" disabled>Rozpocznij produkcję</button>
+            <small>{{ production_start_message }}</small>
+        {% endif %}
+    </form>
+</section>
+
 <section class="card">
     <h2>Materiały zlecenia</h2>
+    <p>Status materiałów zlecenia:
+        {% if order_materials_status_summary == "ok" %}
+            <strong>Komplet materiałów</strong>
+        {% elif order_materials_status_summary == "partial" %}
+            <strong>Częściowa rezerwacja</strong>
+        {% else %}
+            <strong>Braki materiałowe</strong>
+        {% endif %}
+    </p>
     <form class="form-grid" method="post" action="/orders/{{ order.id }}/materials/add">
         <label>Materiał
             <select name="material_id" required>

@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.core.order_materials_engine import (
     auto_reserve_order_material,
+    determine_material_status,
     estimate_material_weight,
     get_latest_material_unit_price,
     summarize_config_reservation_status,
+    update_order_gate_status,
 )
 from app.core.structure_engine import build_horizontal_fence_svg, calculate_horizontal_fence
 from app.db import Material, Order, OrderMaterial, OrderStructureConfig, StructureTemplate, get_db
@@ -166,6 +168,10 @@ def create_structure_config(
     config.materials_cost = total_materials_cost if created_materials else None
     config.estimated_weight_kg = total_estimated_weight if created_materials else None
     config.reservation_status = summarize_config_reservation_status(created_materials)
+
+    for order_material in order.order_materials:
+        order_material.material_status = determine_material_status(order_material.qty_required, order_material.qty_reserved)
+    update_order_gate_status(order, order.order_materials)
 
     db.commit()
     return RedirectResponse(url=f"/orders/{order_id}", status_code=303)
