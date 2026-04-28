@@ -1,3 +1,5 @@
+# Plik: gui_cutting.py
+# Wersja: 0.3.0
 from __future__ import annotations
 
 import tkinter as tk
@@ -12,6 +14,12 @@ from core.cutting_storage import (
     load_stock_bars,
     save_cut_result,
     save_cut_job,
+)
+from core.cutting_units import (
+    clamp_saw_angle,
+    format_mm,
+    parse_length_to_mm,
+    validate_saw_angle,
 )
 
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
@@ -42,7 +50,6 @@ def _cut_mark(angle: float, side: str) -> str:
 
     0     -> |
     +45   -> /
-    -45   -> \
     """
     try:
         angle = float(angle)
@@ -51,13 +58,15 @@ def _cut_mark(angle: float, side: str) -> str:
 
     if abs(angle) < 0.001:
         return "|"
-    if angle > 0:
-        return "/"
-    return "\\"
+    return "/"
 
 
 def _cut_text(length: Any, angle_l: Any, angle_r: Any) -> str:
-    return f"{_cut_mark(float(angle_l or 0), 'L')}{_fmt_num(length)}{_cut_mark(float(angle_r or 0), 'R')}"
+    return (
+        f"{_cut_mark(float(angle_l or 0), 'L')}"
+        f"{format_mm(float(length or 0))}"
+        f"{_cut_mark(float(angle_r or 0), 'R')}"
+    )
 
 
 def _apply_cutting_theme(root: tk.Misc) -> None:
@@ -234,15 +243,14 @@ class CuttingFrame(ttk.Frame):
         helper.insert(
             "1.0",
             "Legenda kątów:\n"
-            "  |1500|  = cięcie proste 0° / 0°\n"
-            "  /1500\\ = lewy +45°, prawy -45°\n"
-            "  \\1500/ = lewy -45°, prawy +45°\n\n"
+            "  |1500 mm (1.5 m)|  = cięcie proste 0° / 0°\n"
+            "  /1500 mm (1.5 m)/  = kąt z lewej/prawej strony w zakresie 0–60°\n\n"
             "Na tym etapie długość = wymiar do odmierzenia na pile.\n"
-            "Kąty są pokazane dla operatora i podglądu.",
+            "Piła: tylko kąty 0–60°. Nie używamy kątów ujemnych.",
         )
         helper.configure(state="disabled")
 
-        self._insert_cut_row("profil_40x40x2", 1500, 45, -45, 3, "przykład ramy")
+        self._insert_cut_row("profil_40x40x2", 1500, 45, 45, 3, "przykład ramy")
         self._insert_cut_row("profil_40x40x2", 850, 0, 0, 2, "poprzeczka")
 
     def _build_result_and_preview(self, parent) -> None:
@@ -343,9 +351,9 @@ class CuttingFrame(ttk.Frame):
             "end",
             values=(
                 material_id,
-                f"{float(length_mm):g}",
-                f"{float(angle_left):g}",
-                f"{float(angle_right):g}",
+                format_mm(float(length_mm)),
+                f"{clamp_saw_angle(float(angle_left)):g}",
+                f"{clamp_saw_angle(float(angle_right)):g}",
                 str(int(qty)),
                 label,
             ),
@@ -359,9 +367,9 @@ class CuttingFrame(ttk.Frame):
                 items.append(
                     CutItem(
                         material_id=str(values[0]).strip(),
-                        length_mm=float(str(values[1]).replace(",", ".")),
-                        angle_left=float(str(values[2]).replace(",", ".")),
-                        angle_right=float(str(values[3]).replace(",", ".")),
+                        length_mm=parse_length_to_mm(str(values[1])),
+                        angle_left=validate_saw_angle(float(str(values[2]).replace(",", "."))),
+                        angle_right=validate_saw_angle(float(str(values[3]).replace(",", "."))),
                         qty=int(values[4]),
                         label=str(values[5]).strip(),
                     )
@@ -370,10 +378,22 @@ class CuttingFrame(ttk.Frame):
                 continue
         return items
 
+    def _validate_angles_or_warn(self, items: List[CutItem]) -> bool:
+        for item in items:
+            validate_saw_angle(item.angle_left)
+            validate_saw_angle(item.angle_right)
+        return True
+
     def _calculate(self) -> None:
         items = self._read_cut_items()
         if not items:
             messagebox.showwarning("Rozkrój", "Brak poprawnych pozycji do cięcia.")
+            return
+
+        try:
+            self._validate_angles_or_warn(items)
+        except Exception as exc:
+            messagebox.showerror("Rozkrój", f"{exc}\n\nPiła obsługuje tylko kąty 0–60°.")
             return
 
         stock = load_stock_bars()
@@ -427,10 +447,10 @@ class CuttingFrame(ttk.Frame):
                 "",
                 "end",
                 values=(
-                    f'{idx}. {bar.get("material_id", "")} / {length:g} mm',
+                    f'{idx}. {bar.get("material_id", "")} / {format_mm(length)}',
                     bar.get("source", ""),
                     cuts_txt,
-                    f'{float(bar.get("waste_mm", 0) or 0):g} mm',
+                    format_mm(float(bar.get("waste_mm", 0) or 0)),
                     usage,
                 ),
             )
@@ -461,9 +481,9 @@ class CuttingFrame(ttk.Frame):
             "PODSUMOWANIE",
             "------------",
             f"Sztang użytych:       {summary.get('bars_count', 0)}",
-            f"Materiał łącznie:     {summary.get('total_length_mm', 0)} mm",
-            f"Zużycie:              {summary.get('total_used_mm', 0)} mm",
-            f"Odpad:                {summary.get('total_waste_mm', 0)} mm",
+            f"Materiał łącznie:     {format_mm(float(summary.get('total_length_mm', 0) or 0))}",
+            f"Zużycie:              {format_mm(float(summary.get('total_used_mm', 0) or 0))}",
+            f"Odpad:                {format_mm(float(summary.get('total_waste_mm', 0) or 0))}",
             f"Wykorzystanie:        {summary.get('usage_percent', 0)}%",
         ]
         if missing:
@@ -472,7 +492,7 @@ class CuttingFrame(ttk.Frame):
             lines.append("-----")
             for row in missing:
                 lines.append(
-                    f"- {row.get('material_id')} / {row.get('length_mm')} mm / {row.get('label', '')}"
+                    f"- {row.get('material_id')} / {format_mm(float(row.get('length_mm', 0) or 0))} / {row.get('label', '')}"
                 )
 
         self.txt_summary.configure(state="normal")
@@ -516,7 +536,7 @@ class CuttingFrame(ttk.Frame):
             bar_y0 = y + 18
             bar_y1 = y + 42
 
-            label = f'{idx}. {bar.get("material_id", "")} / {bar_len:g} mm'
+            label = f'{idx}. {bar.get("material_id", "")} / {format_mm(bar_len)}'
             self.canvas.create_text(10, y + 24, text=label, anchor="w", fill=TEXT, font=("Segoe UI", 9, "bold"))
 
             self.canvas.create_rectangle(x0, bar_y0, x1, bar_y1, fill="#1A1A22", outline=GRID)
@@ -527,29 +547,47 @@ class CuttingFrame(ttk.Frame):
 
             for cut_idx, cut in enumerate(cuts):
                 length = float(cut.get("length_mm", 0) or 0)
-                seg_w = max(2, usable_w * length / bar_len)
+                seg_w = max(4, usable_w * length / bar_len)
                 seg_x0 = cursor
-                seg_x1 = min(x1, cursor + seg_w)
+                seg_x1 = min(x1, seg_x0 + seg_w)
+                if seg_x1 <= seg_x0:
+                    continue
 
-                self.canvas.create_rectangle(seg_x0, bar_y0, seg_x1, bar_y1, fill="#2A1016", outline=RED)
-                self._draw_angle_mark(seg_x0, bar_y0, bar_y1, float(cut.get("angle_left", 0) or 0), left_side=True)
-                self._draw_angle_mark(seg_x1, bar_y0, bar_y1, float(cut.get("angle_right", 0) or 0), left_side=False)
+                # Minimalna przerwa wizualna, żeby segmenty się nie zlewały/nakładały.
+                draw_x0 = seg_x0 + 1
+                draw_x1 = seg_x1 - 1
+                if draw_x1 <= draw_x0:
+                    draw_x0 = seg_x0
+                    draw_x1 = seg_x1
+
+                self.canvas.create_rectangle(draw_x0, bar_y0, draw_x1, bar_y1, fill="#2A1016", outline=RED)
+                self._draw_angle_mark(draw_x0, bar_y0, bar_y1, float(cut.get("angle_left", 0) or 0), left_side=True)
+                self._draw_angle_mark(draw_x1, bar_y0, bar_y1, float(cut.get("angle_right", 0) or 0), left_side=False)
 
                 text = _cut_text(length, cut.get("angle_left", 0), cut.get("angle_right", 0))
-                if seg_w > 45:
+                if seg_w > 75:
                     self.canvas.create_text(
-                        (seg_x0 + seg_x1) / 2,
+                        (draw_x0 + draw_x1) / 2,
                         bar_y0 - 8,
                         text=text,
                         fill=TEXT,
-                        font=("Consolas", 9, "bold"),
+                        font=("Consolas", 8, "bold"),
                     )
 
                 # Rzaz jako czerwona kreska między detalami.
                 cursor = seg_x1
                 if cut_idx < len(cuts) - 1 and kerf > 0:
-                    kerf_w = max(2, usable_w * kerf / bar_len)
-                    self.canvas.create_rectangle(cursor, bar_y0 - 3, cursor + kerf_w, bar_y1 + 3, fill=RED_HOT, outline=RED_HOT)
+                    kerf_w = max(1, usable_w * kerf / bar_len)
+                    kerf_x0 = cursor
+                    kerf_x1 = min(x1, cursor + kerf_w)
+                    self.canvas.create_rectangle(
+                        kerf_x0,
+                        bar_y0 - 3,
+                        kerf_x1,
+                        bar_y1 + 3,
+                        fill=RED_HOT,
+                        outline=RED_HOT,
+                    )
                     cursor += kerf_w
 
             waste = float(bar.get("waste_mm", 0) or 0)
@@ -560,7 +598,7 @@ class CuttingFrame(ttk.Frame):
                     self.canvas.create_text(
                         (waste_x0 + x1) / 2,
                         bar_y1 + 13,
-                        text=f"odpad {waste:g} mm",
+                        text=f"odpad {format_mm(waste)}",
                         fill=YELLOW,
                         font=("Segoe UI", 8),
                     )
@@ -579,16 +617,21 @@ class CuttingFrame(ttk.Frame):
         """Rysuje symbol cięcia na końcu segmentu.
 
         0° jako pionowa kreska.
-        Kąt dodatni/ujemny jako ukośnik.
+        Kąt 1–60° jako ukośnik.
         """
+        angle = clamp_saw_angle(float(angle or 0))
         if abs(angle) < 0.001:
             self.canvas.create_line(x, y0 - 4, x, y1 + 4, fill=TEXT, width=2)
             return
 
-        if angle > 0:
-            self.canvas.create_line(x - 8, y1 + 5, x + 8, y0 - 5, fill=RED_HOT, width=3)
-        else:
-            self.canvas.create_line(x - 8, y0 - 5, x + 8, y1 + 5, fill=RED_HOT, width=3)
+        self.canvas.create_line(x - 8, y1 + 5, x + 8, y0 - 5, fill=RED_HOT, width=3)
+        self.canvas.create_text(
+            x,
+            y0 - 13,
+            text=f"{angle:g}°",
+            fill=RED_HOT,
+            font=("Segoe UI", 7, "bold"),
+        )
 
     def _save_last_result(self) -> None:
         if self._last_result is None:
@@ -608,7 +651,7 @@ class CuttingFrame(ttk.Frame):
         by_len: Dict[str, List[str]] = {}
         for bar in stock:
             by_mat[bar.material_id] = by_mat.get(bar.material_id, 0) + int(bar.qty)
-            by_len.setdefault(bar.material_id, []).append(f"{bar.length_mm:g}mm x{bar.qty}")
+            by_len.setdefault(bar.material_id, []).append(f"{format_mm(bar.length_mm)} x{bar.qty}")
 
         if not by_mat:
             self.var_stock_info.set("Brak danych stock_bars.json — dodaj pierwszą sztangę.")
@@ -661,17 +704,17 @@ class _CutRowDialog:
         _apply_cutting_theme(self.win)
 
         self.v_material = tk.StringVar(value="profil_40x40x2")
-        self.v_length = tk.StringVar(value="1500")
+        self.v_length = tk.StringVar(value="1500mm")
         self.v_angle_l = tk.StringVar(value="45")
-        self.v_angle_r = tk.StringVar(value="-45")
+        self.v_angle_r = tk.StringVar(value="45")
         self.v_qty = tk.StringVar(value="1")
         self.v_label = tk.StringVar(value="")
 
         fields = [
             ("Materiał ID", self.v_material),
-            ("Długość [mm]", self.v_length),
-            ("Kąt L", self.v_angle_l),
-            ("Kąt P", self.v_angle_r),
+            ("Długość [mm/cm/m]", self.v_length),
+            ("Kąt L [0-60°]", self.v_angle_l),
+            ("Kąt P [0-60°]", self.v_angle_r),
             ("Ilość", self.v_qty),
             ("Opis", self.v_label),
         ]
@@ -688,9 +731,9 @@ class _CutRowDialog:
         try:
             self.result = {
                 "material_id": self.v_material.get().strip(),
-                "length_mm": float(self.v_length.get().replace(",", ".")),
-                "angle_left": float(self.v_angle_l.get().replace(",", ".")),
-                "angle_right": float(self.v_angle_r.get().replace(",", ".")),
+                "length_mm": parse_length_to_mm(self.v_length.get()),
+                "angle_left": validate_saw_angle(float(self.v_angle_l.get().replace(",", "."))),
+                "angle_right": validate_saw_angle(float(self.v_angle_r.get().replace(",", "."))),
                 "qty": int(self.v_qty.get()),
                 "label": self.v_label.get().strip(),
             }
@@ -711,14 +754,14 @@ class _StockBarDialog:
 
         self.v_material = tk.StringVar(value="profil_40x40x2")
         self.v_name = tk.StringVar(value="Profil 40x40x2")
-        self.v_length = tk.StringVar(value="6000")
+        self.v_length = tk.StringVar(value="6000mm")
         self.v_qty = tk.StringVar(value="1")
         self.v_location = tk.StringVar(value="")
 
         fields = [
             ("Materiał ID", self.v_material),
             ("Nazwa", self.v_name),
-            ("Długość sztangi [mm]", self.v_length),
+            ("Długość sztangi [mm/cm/m]", self.v_length),
             ("Ilość", self.v_qty),
             ("Lokalizacja", self.v_location),
         ]
@@ -736,7 +779,7 @@ class _StockBarDialog:
             self.result = {
                 "material_id": self.v_material.get().strip(),
                 "name": self.v_name.get().strip(),
-                "length_mm": float(self.v_length.get().replace(",", ".")),
+                "length_mm": parse_length_to_mm(self.v_length.get()),
                 "qty": int(self.v_qty.get()),
                 "location": self.v_location.get().strip(),
             }
