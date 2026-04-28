@@ -9,11 +9,18 @@ from typing import Any, Dict, List, Optional
 from core.cutting_models import CutItem
 from core.cutting_optimizer import optimize_cutting
 from core.cutting_storage import (
+    accept_cutting_calculation,
     add_stock_bar,
     get_cutting_debug_paths,
+    list_cutting_calculations,
+    load_cutting_calculation,
+    load_materials,
+    material_label,
     load_stock_bars,
+    save_cutting_calculation,
     save_cut_result,
     save_cut_job,
+    upsert_material,
 )
 from core.cutting_units import (
     clamp_saw_angle,
@@ -22,8 +29,10 @@ from core.cutting_units import (
     validate_saw_angle,
 )
 
+MAT_COLUMNS = ("material_id", "typ", "nazwa", "rozmiar", "stock", "length")
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
 RESULT_COLUMNS = ("bar", "source", "cuts", "waste", "usage")
+CALC_COLUMNS = ("id", "created", "status", "job", "bars", "usage")
 
 DARK_BG = "#08080A"
 PANEL_BG = "#121217"
@@ -151,7 +160,11 @@ class CuttingFrame(ttk.Frame):
         self.config_obj = config or {}
         self._last_result = None
         self._last_result_dict: Optional[Dict[str, Any]] = None
+        self._materials: List[Dict[str, Any]] = []
+        self._material_labels: Dict[str, str] = {}
         self._build_ui()
+        self._refresh_materials()
+        self._refresh_calculations()
         self._refresh_stock_info()
 
     def _build_ui(self) -> None:
@@ -179,10 +192,12 @@ class CuttingFrame(ttk.Frame):
 
         left = ttk.Frame(main, padding=(0, 0, 10, 0), style="Cut.TFrame")
         right = ttk.Frame(main, padding=(10, 0, 0, 0), style="Cut.TFrame")
-        main.add(left, weight=1)
-        main.add(right, weight=2)
+        main.add(left, weight=2)
+        main.add(right, weight=3)
 
+        self._build_materials(left)
         self._build_cut_list(left)
+        self._build_calculations(left)
         self._build_result_and_preview(right)
         self._build_footer()
 
@@ -191,12 +206,70 @@ class CuttingFrame(ttk.Frame):
         box.pack(fill="x", pady=(0, 6))
         ttk.Label(box, text=text, style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
+    def _build_materials(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(0, 6))
+        ttk.Label(top, text="Baza surowców", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+        ttk.Button(top, text="+ Surowiec", command=self._add_material_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="Edytuj", command=self._edit_selected_material, style="Cut.TButton").pack(side="right")
+
+        self.tree_materials = ttk.Treeview(
+            parent,
+            columns=MAT_COLUMNS,
+            show="headings",
+            selectmode="browse",
+            height=6,
+            style="Cut.Treeview",
+        )
+        self.tree_materials.pack(fill="x", expand=False, pady=(0, 10))
+        labels = {
+            "material_id": "ID",
+            "typ": "Typ",
+            "nazwa": "Nazwa",
+            "rozmiar": "Rozmiar",
+            "stock": "Stan",
+            "length": "Sztanga",
+        }
+        widths = {
+            "material_id": 145,
+            "typ": 70,
+            "nazwa": 135,
+            "rozmiar": 95,
+            "stock": 60,
+            "length": 120,
+        }
+        for col in MAT_COLUMNS:
+            self.tree_materials.heading(col, text=labels[col])
+            self.tree_materials.column(col, width=widths[col], anchor="w")
+        self.tree_materials.bind("<Double-1>", lambda _e: self._edit_selected_material())
+
+    def _refresh_materials(self) -> None:
+        self._materials = [m for m in load_materials() if m.get("aktywny", True)]
+        self._material_labels = {material_label(m): m["material_id"] for m in self._materials}
+        if hasattr(self, "tree_materials"):
+            for iid in self.tree_materials.get_children():
+                self.tree_materials.delete(iid)
+            for m in self._materials:
+                self.tree_materials.insert(
+                    "",
+                    "end",
+                    values=(
+                        m.get("material_id", ""),
+                        m.get("typ", ""),
+                        m.get("nazwa", ""),
+                        m.get("rozmiar", ""),
+                        f'{m.get("stock_qty", 0)} szt.',
+                        format_mm(float(m.get("domyslna_dlugosc_mm", 0) or 0)),
+                    ),
+                )
+
     def _build_cut_list(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
         top.pack(fill="x", pady=(0, 6))
         ttk.Label(top, text="Lista do cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
         ttk.Button(top, text="+ Dodaj", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
 
         self.tree_cuts = ttk.Treeview(
@@ -250,8 +323,7 @@ class CuttingFrame(ttk.Frame):
         )
         helper.configure(state="disabled")
 
-        self._insert_cut_row("profil_40x40x2", 1500, 45, 45, 3, "przykład ramy")
-        self._insert_cut_row("profil_40x40x2", 850, 0, 0, 2, "poprzeczka")
+        self.tree_cuts.bind("<Double-1>", lambda _e: self._edit_selected_cut())
 
     def _build_result_and_preview(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
@@ -316,12 +388,75 @@ class CuttingFrame(ttk.Frame):
         )
         self.txt_summary.pack(fill="x", pady=(10, 0))
 
+    def _build_calculations(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(10, 6))
+        ttk.Label(top, text="Lista kalkulacji cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+        ttk.Button(top, text="Odśwież", command=self._refresh_calculations, style="Cut.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="Wczytaj", command=self._load_selected_calculation, style="Cut.TButton").pack(side="right")
+
+        self.tree_calculations = ttk.Treeview(
+            parent,
+            columns=CALC_COLUMNS,
+            show="headings",
+            selectmode="browse",
+            height=6,
+            style="Cut.Treeview",
+        )
+        self.tree_calculations.pack(fill="x", expand=False)
+        labels = {
+            "id": "ID",
+            "created": "Data",
+            "status": "Status",
+            "job": "Zlecenie",
+            "bars": "Szt.",
+            "usage": "%",
+        }
+        widths = {
+            "id": 130,
+            "created": 125,
+            "status": 80,
+            "job": 120,
+            "bars": 45,
+            "usage": 50,
+        }
+        for col in CALC_COLUMNS:
+            self.tree_calculations.heading(col, text=labels[col])
+            self.tree_calculations.column(col, width=widths[col], anchor="w")
+        self.tree_calculations.bind("<Double-1>", lambda _e: self._load_selected_calculation())
+
+    def _refresh_calculations(self) -> None:
+        if not hasattr(self, "tree_calculations"):
+            return
+        for iid in self.tree_calculations.get_children():
+            self.tree_calculations.delete(iid)
+        for row in list_cutting_calculations():
+            self.tree_calculations.insert(
+                "",
+                "end",
+                values=(
+                    row.get("calculation_id", ""),
+                    row.get("created_at", ""),
+                    row.get("status", ""),
+                    row.get("job_id", ""),
+                    row.get("bars_count", 0),
+                    row.get("usage_percent", 0),
+                ),
+            )
+
     def _build_footer(self) -> None:
         footer = ttk.Frame(self, style="Cut.TFrame")
         footer.pack(fill="x", pady=(10, 0))
 
         self.var_stock_info = tk.StringVar(value="")
         ttk.Label(footer, textvariable=self.var_stock_info, style="Cut.TLabel").pack(side="left")
+
+        ttk.Button(
+            footer,
+            text="Akceptuj kalkulację / zdejmij stan",
+            command=self._accept_last_result,
+            style="Cut.Red.TButton",
+        ).pack(side="right", padx=(6, 0))
 
         ttk.Button(
             footer,
@@ -358,6 +493,37 @@ class CuttingFrame(ttk.Frame):
                 label,
             ),
         )
+
+    def _selected_material_id(self) -> str:
+        sel = getattr(self, "tree_materials", None).selection() if hasattr(self, "tree_materials") else []
+        if sel:
+            values = self.tree_materials.item(sel[0], "values")
+            return str(values[0]).strip()
+        return self._materials[0]["material_id"] if self._materials else ""
+
+    def _get_material_row(self, material_id: str) -> Optional[Dict[str, Any]]:
+        for row in self._materials:
+            if str(row.get("material_id", "")).strip() == material_id:
+                return row
+        return None
+
+    def _add_material_dialog(self) -> None:
+        dialog = _MaterialDialog(self)
+        self.wait_window(dialog.win)
+        if dialog.result:
+            upsert_material(dialog.result)
+            self._refresh_materials()
+
+    def _edit_selected_material(self) -> None:
+        material_id = self._selected_material_id()
+        row = self._get_material_row(material_id)
+        if not row:
+            return
+        dialog = _MaterialDialog(self, row)
+        self.wait_window(dialog.win)
+        if dialog.result:
+            upsert_material(dialog.result)
+            self._refresh_materials()
 
     def _read_cut_items(self) -> List[CutItem]:
         items: List[CutItem] = []
@@ -422,6 +588,9 @@ class CuttingFrame(ttk.Frame):
         self._last_result = result
         self._last_result_dict = result.to_dict()
         self._render_result(self._last_result_dict)
+        calc_id = self.var_job.get().strip() or f"KALK-{int(__import__('time').time())}"
+        self._last_result_dict["status"] = "draft"
+        self._last_result_dict["calculation_id"] = calc_id
 
         payload = {
             "job_id": self.var_job.get().strip() or "ROZKROJ",
@@ -431,6 +600,8 @@ class CuttingFrame(ttk.Frame):
         }
         try:
             save_cut_job(payload["job_id"], payload)
+            save_cutting_calculation(payload["job_id"], payload, self._last_result_dict)
+            self._refresh_calculations()
         except Exception:
             pass
 
@@ -471,7 +642,7 @@ class CuttingFrame(ttk.Frame):
             )
         waste = float(bar.get("waste_mm", 0) or 0)
         if waste > 0:
-            chunks.append(f"odpad {waste:g}")
+            chunks.append(f"odpad {format_mm(waste)}")
         return " -- ".join(chunks)
 
     def _render_summary(self, data: Dict[str, Any]) -> None:
@@ -668,8 +839,36 @@ class CuttingFrame(ttk.Frame):
             return
         self.tree_cuts.delete(sel[0])
 
+    def _edit_selected_cut(self) -> None:
+        sel = self.tree_cuts.selection()
+        if not sel:
+            return
+        values = self.tree_cuts.item(sel[0], "values")
+        data = {
+            "material_id": values[0],
+            "length_mm": parse_length_to_mm(str(values[1])),
+            "angle_left": values[2],
+            "angle_right": values[3],
+            "qty": values[4],
+            "label": values[5],
+        }
+        dialog = _CutRowDialog(self, data)
+        self.wait_window(dialog.win)
+        if dialog.result:
+            self.tree_cuts.item(
+                sel[0],
+                values=(
+                    dialog.result["material_id"],
+                    format_mm(dialog.result["length_mm"]),
+                    f'{dialog.result["angle_left"]:g}',
+                    f'{dialog.result["angle_right"]:g}',
+                    str(int(dialog.result["qty"])),
+                    dialog.result["label"],
+                ),
+            )
+
     def _add_cut_row_dialog(self) -> None:
-        dialog = _CutRowDialog(self)
+        dialog = _CutRowDialog(self, {"material_id": self._selected_material_id()})
         self.wait_window(dialog.win)
         if dialog.result:
             self._insert_cut_row(**dialog.result)
@@ -685,6 +884,46 @@ class CuttingFrame(ttk.Frame):
             messagebox.showerror("Rozkrój", f"Nie udało się dodać sztangi:\n{exc}")
             return
         self._refresh_stock_info()
+        self._refresh_materials()
+
+    def _accept_last_result(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Rozkrój", "Najpierw oblicz albo wczytaj kalkulację.")
+            return
+        if self._last_result_dict.get("accepted_at"):
+            messagebox.showinfo("Rozkrój", "Ta kalkulacja jest już zaakceptowana.")
+            return
+        job_id = self._last_result_dict.get("calculation_id") or self._last_result_dict.get("job_id") or self.var_job.get()
+        if not messagebox.askyesno(
+            "Akceptuj kalkulację",
+            "Zaakceptować kalkulację i zmniejszyć stan surowców w magazynie?\n\n"
+            "Tej operacji na razie nie cofamy automatycznie.",
+        ):
+            return
+        try:
+            accept_cutting_calculation(job_id, self._last_result_dict)
+        except Exception as exc:
+            messagebox.showerror("Rozkrój", f"Nie udało się zaakceptować kalkulacji:\n{exc}")
+            return
+        messagebox.showinfo("Rozkrój", "Kalkulacja zaakceptowana. Stan surowców zmniejszony.")
+        self._refresh_stock_info()
+        self._refresh_materials()
+        self._refresh_calculations()
+
+    def _load_selected_calculation(self) -> None:
+        sel = self.tree_calculations.selection()
+        if not sel:
+            return
+        values = self.tree_calculations.item(sel[0], "values")
+        calc_id = str(values[0]).strip()
+        data = load_cutting_calculation(calc_id)
+        result = data.get("result") if isinstance(data.get("result"), dict) else {}
+        job = data.get("job") if isinstance(data.get("job"), dict) else {}
+        if not result:
+            return
+        self.var_job.set(str(job.get("job_id") or result.get("job_id") or calc_id))
+        self._last_result_dict = result
+        self._render_result(result)
 
     def _show_paths(self) -> None:
         paths = get_cutting_debug_paths()
@@ -694,8 +933,61 @@ class CuttingFrame(ttk.Frame):
         )
 
 
+class _MaterialDialog:
+    def __init__(self, parent, row: Optional[Dict[str, Any]] = None):
+        row = row or {}
+        self.result = None
+        self.win = tk.Toplevel(parent)
+        self.win.title("Surowiec")
+        self.win.transient(parent.winfo_toplevel())
+        self.win.grab_set()
+        _apply_cutting_theme(self.win)
+
+        self.v_id = tk.StringVar(value=str(row.get("material_id", "")))
+        self.v_typ = tk.StringVar(value=str(row.get("typ", "profil")))
+        self.v_nazwa = tk.StringVar(value=str(row.get("nazwa", "")))
+        self.v_rozmiar = tk.StringVar(value=str(row.get("rozmiar", "")))
+        self.v_len = tk.StringVar(value=format_mm(float(row.get("domyslna_dlugosc_mm", 6000) or 6000)))
+        self.v_active = tk.BooleanVar(value=bool(row.get("aktywny", True)))
+        self.v_uwagi = tk.StringVar(value=str(row.get("uwagi", "")))
+
+        fields = [
+            ("ID, np. profil_40x30x2", self.v_id),
+            ("Typ, np. profil/rura/pret/plaskownik", self.v_typ),
+            ("Nazwa", self.v_nazwa),
+            ("Rozmiar, np. 40x30x2 albo fi 30", self.v_rozmiar),
+            ("Długość sztangi [mm/cm/m]", self.v_len),
+            ("Uwagi", self.v_uwagi),
+        ]
+        for i, (label, var) in enumerate(fields):
+            ttk.Label(self.win, text=label, style="Cut.TLabel").grid(row=i, column=0, padx=10, pady=6, sticky="w")
+            ttk.Entry(self.win, textvariable=var, width=36, style="Cut.TEntry").grid(row=i, column=1, padx=10, pady=6, sticky="ew")
+        ttk.Checkbutton(self.win, text="Aktywny", variable=self.v_active).grid(row=len(fields), column=1, sticky="w", padx=10)
+        btns = ttk.Frame(self.win, style="Cut.TFrame")
+        btns.grid(row=len(fields) + 1, column=0, columnspan=2, pady=(10, 10))
+        ttk.Button(btns, text="OK", command=self._ok, style="Cut.Red.TButton").pack(side="left", padx=5)
+        ttk.Button(btns, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(side="left", padx=5)
+
+    def _ok(self) -> None:
+        try:
+            self.result = {
+                "material_id": self.v_id.get().strip(),
+                "typ": self.v_typ.get().strip(),
+                "nazwa": self.v_nazwa.get().strip(),
+                "rozmiar": self.v_rozmiar.get().strip(),
+                "domyslna_dlugosc_mm": parse_length_to_mm(self.v_len.get()),
+                "aktywny": bool(self.v_active.get()),
+                "uwagi": self.v_uwagi.get().strip(),
+            }
+        except Exception:
+            messagebox.showerror("Surowiec", "Sprawdź dane surowca.")
+            return
+        self.win.destroy()
+
+
 class _CutRowDialog:
-    def __init__(self, parent):
+    def __init__(self, parent, row: Optional[Dict[str, Any]] = None):
+        row = row or {}
         self.result = None
         self.win = tk.Toplevel(parent)
         self.win.title("Dodaj pozycję cięcia")
@@ -703,34 +995,49 @@ class _CutRowDialog:
         self.win.grab_set()
         _apply_cutting_theme(self.win)
 
-        self.v_material = tk.StringVar(value="profil_40x40x2")
-        self.v_length = tk.StringVar(value="1500mm")
-        self.v_angle_l = tk.StringVar(value="45")
-        self.v_angle_r = tk.StringVar(value="45")
-        self.v_qty = tk.StringVar(value="1")
-        self.v_label = tk.StringVar(value="")
+        self.parent = parent
+        self.v_material = tk.StringVar(value=str(row.get("material_id", parent._selected_material_id() if hasattr(parent, "_selected_material_id") else "")))
+        self.v_length = tk.StringVar(value=format_mm(float(row.get("length_mm", 1500) or 1500)))
+        self.v_angle_l = tk.StringVar(value=str(row.get("angle_left", "45")))
+        self.v_angle_r = tk.StringVar(value=str(row.get("angle_right", "45")))
+        self.v_qty = tk.StringVar(value=str(row.get("qty", "1")))
+        self.v_label = tk.StringVar(value=str(row.get("label", "")))
+
+        material_values = []
+        if hasattr(parent, "_materials"):
+            material_values = [material_label(m) for m in parent._materials]
+        self._label_to_id = {material_label(m): m["material_id"] for m in getattr(parent, "_materials", [])}
+
+        ttk.Label(self.win, text="Materiał", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
+        self.cbo_material = ttk.Combobox(self.win, textvariable=self.v_material, values=material_values, width=42)
+        self.cbo_material.grid(row=0, column=1, padx=10, pady=6, sticky="ew")
+        for label, mid in self._label_to_id.items():
+            if mid == self.v_material.get():
+                self.v_material.set(label)
+                break
 
         fields = [
-            ("Materiał ID", self.v_material),
             ("Długość [mm/cm/m]", self.v_length),
             ("Kąt L [0-60°]", self.v_angle_l),
             ("Kąt P [0-60°]", self.v_angle_r),
             ("Ilość", self.v_qty),
             ("Opis", self.v_label),
         ]
-        for row, (label, var) in enumerate(fields):
-            ttk.Label(self.win, text=label, style="Cut.TLabel").grid(row=row, column=0, padx=10, pady=6, sticky="w")
-            ttk.Entry(self.win, textvariable=var, width=30, style="Cut.TEntry").grid(row=row, column=1, padx=10, pady=6, sticky="ew")
+        for idx, (label, var) in enumerate(fields, start=1):
+            ttk.Label(self.win, text=label, style="Cut.TLabel").grid(row=idx, column=0, padx=10, pady=6, sticky="w")
+            ttk.Entry(self.win, textvariable=var, width=30, style="Cut.TEntry").grid(row=idx, column=1, padx=10, pady=6, sticky="ew")
 
         btns = ttk.Frame(self.win, style="Cut.TFrame")
-        btns.grid(row=len(fields), column=0, columnspan=2, pady=(10, 10))
+        btns.grid(row=len(fields) + 1, column=0, columnspan=2, pady=(10, 10))
         ttk.Button(btns, text="OK", command=self._ok, style="Cut.Red.TButton").pack(side="left", padx=5)
         ttk.Button(btns, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(side="left", padx=5)
 
     def _ok(self) -> None:
         try:
+            material = self.v_material.get().strip()
+            material = self._label_to_id.get(material, material)
             self.result = {
-                "material_id": self.v_material.get().strip(),
+                "material_id": material,
                 "length_mm": parse_length_to_mm(self.v_length.get()),
                 "angle_left": validate_saw_angle(float(self.v_angle_l.get().replace(",", "."))),
                 "angle_right": validate_saw_angle(float(self.v_angle_r.get().replace(",", "."))),
