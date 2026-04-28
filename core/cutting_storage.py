@@ -8,14 +8,46 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
-from config.paths import get_path
 from core.cutting_models import CutItem, StockBar
+
+try:
+    from config.paths import get_path as _wm_get_path
+except Exception:
+    _wm_get_path = None
 
 
 DEFAULT_STOCK = {
     "bars": [],
     "offs": [],
 }
+
+
+def _local_data_root() -> Path:
+    """Fallback, gdy moduł rozkroju działa poza Warsztat-Menager.
+
+    Przykład: Ednor-main albo samodzielny test przez:
+        py gui_cutting.py
+    """
+
+    return Path(__file__).resolve().parents[1] / "data"
+
+
+def _get_path(key: str) -> str:
+    if _wm_get_path is not None:
+        try:
+            value = _wm_get_path(key)
+            if value:
+                return value
+        except Exception:
+            pass
+
+    data_base = _local_data_root()
+    fallback = {
+        "cutting.stock_bars_file": data_base / "magazyn" / "stock_bars.json",
+        "cutting.jobs_dir": data_base / "rozkrój" / "jobs",
+        "cutting.reports_dir": data_base / "rozkrój" / "reports",
+    }
+    return str(fallback[key])
 
 
 def _ensure_parent(path: str) -> None:
@@ -46,17 +78,17 @@ def _write_json(path: str, data: Any) -> str:
 
 
 def get_cutting_stock_path() -> str:
-    return get_path("cutting.stock_bars_file")
+    return _get_path("cutting.stock_bars_file")
 
 
 def get_cutting_jobs_dir() -> str:
-    path = get_path("cutting.jobs_dir")
+    path = _get_path("cutting.jobs_dir")
     os.makedirs(path, exist_ok=True)
     return path
 
 
 def get_cutting_reports_dir() -> str:
-    path = get_path("cutting.reports_dir")
+    path = _get_path("cutting.reports_dir")
     os.makedirs(path, exist_ok=True)
     return path
 
