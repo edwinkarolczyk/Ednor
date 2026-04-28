@@ -1,5 +1,3 @@
-# Plik: gui_cutting.py
-# Wersja: 0.1.0
 from __future__ import annotations
 
 import tkinter as tk
@@ -16,106 +14,191 @@ from core.cutting_storage import (
     save_cut_job,
 )
 
-try:
-    from ui_theme import apply_theme_safe as apply_theme
-except Exception:  # pragma: no cover
-
-    def apply_theme(_widget):
-        return None
-
-
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
 RESULT_COLUMNS = ("bar", "source", "cuts", "waste", "usage")
+
+DARK_BG = "#08080A"
+PANEL_BG = "#121217"
+PANEL_2 = "#191920"
+RED = "#B11226"
+RED_HOT = "#E3263A"
+TEXT = "#F2F2F2"
+MUTED = "#A7A7A7"
+GRID = "#303038"
+GREEN = "#37B36B"
+YELLOW = "#E0B84D"
+
+
+def _fmt_num(value: Any) -> str:
+    try:
+        f = float(value)
+        return f"{f:g}"
+    except Exception:
+        return str(value)
+
+
+def _cut_mark(angle: float, side: str) -> str:
+    """Tekstowy symbol kąta.
+
+    0     -> |
+    +45   -> /
+    -45   -> \
+    """
+    try:
+        angle = float(angle)
+    except Exception:
+        angle = 0.0
+
+    if abs(angle) < 0.001:
+        return "|"
+    if angle > 0:
+        return "/"
+    return "\\"
+
+
+def _cut_text(length: Any, angle_l: Any, angle_r: Any) -> str:
+    return f"{_cut_mark(float(angle_l or 0), 'L')}{_fmt_num(length)}{_cut_mark(float(angle_r or 0), 'R')}"
+
+
+def _apply_cutting_theme(root: tk.Misc) -> None:
+    """Lokalny ciemny motyw dla modułu rozkroju.
+
+    Nie miesza w globalnym ui_theme WM. To jest bezpieczniejsze na tym etapie.
+    """
+    try:
+        root.configure(bg=DARK_BG)
+    except Exception:
+        pass
+
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except Exception:
+        pass
+
+    style.configure("Cut.TFrame", background=DARK_BG)
+    style.configure("Cut.Panel.TFrame", background=PANEL_BG)
+    style.configure("Cut.TLabel", background=DARK_BG, foreground=TEXT, font=("Segoe UI", 10))
+    style.configure("Cut.Title.TLabel", background=DARK_BG, foreground=RED_HOT, font=("Segoe UI", 18, "bold"))
+    style.configure("Cut.Subtitle.TLabel", background=PANEL_BG, foreground=TEXT, font=("Segoe UI", 12, "bold"))
+    style.configure("Cut.Muted.TLabel", background=DARK_BG, foreground=MUTED, font=("Segoe UI", 9))
+    style.configure("Cut.TButton", background=PANEL_2, foreground=TEXT, padding=(10, 6), borderwidth=1)
+    style.map(
+        "Cut.TButton",
+        background=[("active", RED), ("pressed", RED_HOT)],
+        foreground=[("active", TEXT), ("pressed", TEXT)],
+    )
+    style.configure("Cut.Red.TButton", background=RED, foreground=TEXT, padding=(12, 7), borderwidth=1)
+    style.map(
+        "Cut.Red.TButton",
+        background=[("active", RED_HOT), ("pressed", "#ff4055")],
+        foreground=[("active", TEXT), ("pressed", TEXT)],
+    )
+    style.configure(
+        "Cut.Treeview",
+        background="#0D0D11",
+        fieldbackground="#0D0D11",
+        foreground=TEXT,
+        rowheight=30,
+        bordercolor=GRID,
+        lightcolor=GRID,
+        darkcolor=GRID,
+        font=("Segoe UI", 10),
+    )
+    style.configure(
+        "Cut.Treeview.Heading",
+        background=RED,
+        foreground=TEXT,
+        font=("Segoe UI", 10, "bold"),
+        padding=(6, 6),
+    )
+    style.map(
+        "Cut.Treeview",
+        background=[("selected", RED)],
+        foreground=[("selected", TEXT)],
+    )
+    style.configure(
+        "Cut.TEntry",
+        fieldbackground="#0D0D11",
+        foreground=TEXT,
+        insertcolor=TEXT,
+        bordercolor=GRID,
+    )
 
 
 class CuttingFrame(ttk.Frame):
     """Panel rozkroju profili/sztang/prętów.
 
-    Wersja 0.1:
-    - ręczne wpisywanie listy cięcia,
-    - ręczne dodawanie sztang do pliku stock_bars.json,
-    - optymalizacja best-fit,
-    - zapis job/result do ROOT/data/rozkrój.
+    Wersja 0.2:
+    - czarno-czerwony motyw lokalny,
+    - pełniejszy, czytelniejszy układ,
+    - graficzny podgląd sztang i kątów,
+    - większe kontrolki pod warsztat.
     """
 
     def __init__(self, master, config: Optional[Dict[str, Any]] = None):
-        super().__init__(master, padding=(8, 8, 8, 8), style="WM.TFrame")
+        _apply_cutting_theme(master.winfo_toplevel())
+        super().__init__(master, padding=(12, 12, 12, 12), style="Cut.TFrame")
         self.config_obj = config or {}
         self._last_result = None
+        self._last_result_dict: Optional[Dict[str, Any]] = None
         self._build_ui()
         self._refresh_stock_info()
 
     def _build_ui(self) -> None:
-        header = ttk.Frame(self, style="WM.TFrame")
-        header.pack(fill="x", pady=(0, 8))
+        header = ttk.Frame(self, style="Cut.TFrame")
+        header.pack(fill="x", pady=(0, 10))
 
-        ttk.Label(header, text="Rozkrój / cięcie", style="WM.TLabel").pack(
-            side="left", padx=(0, 12)
-        )
+        ttk.Label(header, text="ROZKRÓJ / CIĘCIE", style="Cut.Title.TLabel").pack(side="left", padx=(0, 18))
 
-        ttk.Label(header, text="Zlecenie:", style="WM.TLabel").pack(side="left")
+        ttk.Label(header, text="Zlecenie:", style="Cut.TLabel").pack(side="left")
         self.var_job = tk.StringVar(value="ROZKROJ-TEST")
-        ttk.Entry(header, textvariable=self.var_job, width=22).pack(
-            side="left", padx=(4, 12)
-        )
+        ttk.Entry(header, textvariable=self.var_job, width=24, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
-        ttk.Label(header, text="Rzaz piły [mm]:", style="WM.TLabel").pack(side="left")
+        ttk.Label(header, text="Rzaz [mm]:", style="Cut.TLabel").pack(side="left")
         self.var_kerf = tk.StringVar(value="2.5")
-        ttk.Entry(header, textvariable=self.var_kerf, width=7).pack(
-            side="left", padx=(4, 12)
-        )
+        ttk.Entry(header, textvariable=self.var_kerf, width=8, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
-        ttk.Label(header, text="Min. odpad [mm]:", style="WM.TLabel").pack(side="left")
+        ttk.Label(header, text="Min. odpad [mm]:", style="Cut.TLabel").pack(side="left")
         self.var_min_offcut = tk.StringVar(value="300")
-        ttk.Entry(header, textvariable=self.var_min_offcut, width=8).pack(
-            side="left", padx=(4, 12)
-        )
+        ttk.Entry(header, textvariable=self.var_min_offcut, width=9, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
-        ttk.Button(
-            header,
-            text="Ścieżki",
-            command=self._show_paths,
-            style="WM.Side.TButton",
-        ).pack(side="right")
+        ttk.Button(header, text="Ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right")
 
-        body = ttk.Panedwindow(self, orient="horizontal")
-        body.pack(fill="both", expand=True)
+        main = ttk.Panedwindow(self, orient="horizontal")
+        main.pack(fill="both", expand=True)
 
-        left = ttk.Frame(body, padding=(0, 0, 8, 0), style="WM.TFrame")
-        right = ttk.Frame(body, padding=(8, 0, 0, 0), style="WM.TFrame")
-        body.add(left, weight=1)
-        body.add(right, weight=1)
+        left = ttk.Frame(main, padding=(0, 0, 10, 0), style="Cut.TFrame")
+        right = ttk.Frame(main, padding=(10, 0, 0, 0), style="Cut.TFrame")
+        main.add(left, weight=1)
+        main.add(right, weight=2)
 
         self._build_cut_list(left)
-        self._build_result(right)
+        self._build_result_and_preview(right)
         self._build_footer()
 
-    def _build_cut_list(self, parent) -> None:
-        top = ttk.Frame(parent, style="WM.TFrame")
-        top.pack(fill="x", pady=(0, 6))
-        ttk.Label(top, text="Lista do cięcia", style="WM.TLabel").pack(side="left")
+    def _panel_title(self, parent, text: str) -> None:
+        box = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        box.pack(fill="x", pady=(0, 6))
+        ttk.Label(box, text=text, style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
-        ttk.Button(
-            top,
-            text="Dodaj pozycję",
-            command=self._add_cut_row_dialog,
-            style="WM.Side.TButton",
-        ).pack(side="right")
-        ttk.Button(
-            top,
-            text="Usuń",
-            command=self._delete_selected_cut,
-            style="WM.Side.TButton",
-        ).pack(side="right", padx=(0, 6))
+    def _build_cut_list(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(0, 6))
+        ttk.Label(top, text="Lista do cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+
+        ttk.Button(top, text="+ Dodaj", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
 
         self.tree_cuts = ttk.Treeview(
             parent,
             columns=CUT_COLUMNS,
             show="headings",
             selectmode="browse",
-            height=18,
+            height=14,
+            style="Cut.Treeview",
         )
-        self.tree_cuts.pack(fill="both", expand=True)
+        self.tree_cuts.pack(fill="both", expand=False)
 
         labels = {
             "material": "Materiał ID",
@@ -126,90 +209,124 @@ class CuttingFrame(ttk.Frame):
             "label": "Opis",
         }
         widths = {
-            "material": 150,
-            "length": 90,
+            "material": 170,
+            "length": 85,
             "angle_l": 70,
             "angle_r": 70,
-            "qty": 60,
+            "qty": 55,
             "label": 180,
         }
         for col in CUT_COLUMNS:
             self.tree_cuts.heading(col, text=labels[col])
             self.tree_cuts.column(col, width=widths[col], anchor="w")
 
-        # Przykład na start, żeby ekran nie wyglądał jak świeżo wyczyszczony stół.
-        self._insert_cut_row("profil_40x40x2", 500, 45, -45, 2, "rama krótka")
-        self._insert_cut_row("profil_40x40x2", 1000, 45, -45, 2, "rama długa")
+        helper = tk.Text(
+            parent,
+            height=7,
+            bg=PANEL_BG,
+            fg=MUTED,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+        )
+        helper.pack(fill="x", pady=(10, 0))
+        helper.insert(
+            "1.0",
+            "Legenda kątów:\n"
+            "  |1500|  = cięcie proste 0° / 0°\n"
+            "  /1500\\ = lewy +45°, prawy -45°\n"
+            "  \\1500/ = lewy -45°, prawy +45°\n\n"
+            "Na tym etapie długość = wymiar do odmierzenia na pile.\n"
+            "Kąty są pokazane dla operatora i podglądu.",
+        )
+        helper.configure(state="disabled")
 
-    def _build_result(self, parent) -> None:
-        top = ttk.Frame(parent, style="WM.TFrame")
+        self._insert_cut_row("profil_40x40x2", 1500, 45, -45, 3, "przykład ramy")
+        self._insert_cut_row("profil_40x40x2", 850, 0, 0, 2, "poprzeczka")
+
+    def _build_result_and_preview(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
         top.pack(fill="x", pady=(0, 6))
-        ttk.Label(top, text="Wynik optymalizacji", style="WM.TLabel").pack(side="left")
 
-        ttk.Button(
-            top,
-            text="Oblicz",
-            command=self._calculate,
-            style="WM.Side.TButton",
-        ).pack(side="right")
-        ttk.Button(
-            top,
-            text="Zapisz wynik",
-            command=self._save_last_result,
-            style="WM.Side.TButton",
-        ).pack(side="right", padx=(0, 6))
+        ttk.Label(top, text="Wynik + podgląd sztang", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+
+        ttk.Button(top, text="OBLICZ", command=self._calculate, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="Zapisz wynik", command=self._save_last_result, style="Cut.TButton").pack(side="right")
 
         self.tree_result = ttk.Treeview(
             parent,
             columns=RESULT_COLUMNS,
             show="headings",
             selectmode="browse",
-            height=18,
+            height=8,
+            style="Cut.Treeview",
         )
-        self.tree_result.pack(fill="both", expand=True)
+        self.tree_result.pack(fill="x", expand=False)
 
         labels = {
             "bar": "Sztanga",
             "source": "Źródło",
-            "cuts": "Cięcia",
+            "cuts": "Cięcia tekstowo",
             "waste": "Odpad",
             "usage": "Użycie",
         }
         widths = {
-            "bar": 130,
-            "source": 80,
-            "cuts": 360,
-            "waste": 90,
+            "bar": 180,
+            "source": 85,
+            "cuts": 520,
+            "waste": 100,
             "usage": 80,
         }
         for col in RESULT_COLUMNS:
             self.tree_result.heading(col, text=labels[col])
             self.tree_result.column(col, width=widths[col], anchor="w")
 
-        self.txt_summary = tk.Text(parent, height=7, wrap="word")
-        self.txt_summary.pack(fill="x", pady=(8, 0))
+        preview_box = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        preview_box.pack(fill="both", expand=True, pady=(10, 0))
+
+        ttk.Label(preview_box, text="Graficzny podgląd cięcia", style="Cut.Subtitle.TLabel").pack(anchor="w", padx=10, pady=(8, 0))
+
+        self.canvas = tk.Canvas(
+            preview_box,
+            bg="#09090C",
+            highlightthickness=1,
+            highlightbackground=GRID,
+            height=300,
+        )
+        self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.txt_summary = tk.Text(
+            parent,
+            height=7,
+            bg="#0D0D11",
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+        )
+        self.txt_summary.pack(fill="x", pady=(10, 0))
 
     def _build_footer(self) -> None:
-        footer = ttk.Frame(self, style="WM.TFrame")
-        footer.pack(fill="x", pady=(8, 0))
+        footer = ttk.Frame(self, style="Cut.TFrame")
+        footer.pack(fill="x", pady=(10, 0))
 
         self.var_stock_info = tk.StringVar(value="")
-        ttk.Label(footer, textvariable=self.var_stock_info, style="WM.TLabel").pack(
-            side="left"
-        )
+        ttk.Label(footer, textvariable=self.var_stock_info, style="Cut.TLabel").pack(side="left")
 
         ttk.Button(
             footer,
             text="Dodaj sztangę do stock_bars",
             command=self._add_stock_bar_dialog,
-            style="WM.Side.TButton",
+            style="Cut.Red.TButton",
         ).pack(side="right")
 
         ttk.Button(
             footer,
             text="Odśwież stan",
             command=self._refresh_stock_info,
-            style="WM.Side.TButton",
+            style="Cut.TButton",
         ).pack(side="right", padx=(0, 6))
 
     def _insert_cut_row(
@@ -242,9 +359,9 @@ class CuttingFrame(ttk.Frame):
                 items.append(
                     CutItem(
                         material_id=str(values[0]).strip(),
-                        length_mm=float(values[1]),
-                        angle_left=float(values[2]),
-                        angle_right=float(values[3]),
+                        length_mm=float(str(values[1]).replace(",", ".")),
+                        angle_left=float(str(values[2]).replace(",", ".")),
+                        angle_right=float(str(values[3]).replace(",", ".")),
                         qty=int(values[4]),
                         label=str(values[5]).strip(),
                     )
@@ -283,7 +400,8 @@ class CuttingFrame(ttk.Frame):
             min_reusable_offcut_mm=min_offcut,
         )
         self._last_result = result
-        self._render_result(result.to_dict())
+        self._last_result_dict = result.to_dict()
+        self._render_result(self._last_result_dict)
 
         payload = {
             "job_id": self.var_job.get().strip() or "ROZKROJ",
@@ -301,12 +419,7 @@ class CuttingFrame(ttk.Frame):
             self.tree_result.delete(iid)
 
         for idx, bar in enumerate(data.get("bars_used", []), start=1):
-            cuts_txt = " | ".join(
-                [
-                    f'{cut.get("length_mm"):g} ({cut.get("angle_left"):g}/{cut.get("angle_right"):g}) {cut.get("label", "")}'.strip()
-                    for cut in bar.get("cuts", [])
-                ]
-            )
+            cuts_txt = self._bar_cuts_text(bar)
             used = float(bar.get("used_mm", 0) or 0)
             length = float(bar.get("bar_length_mm", 0) or 0)
             usage = f"{(used / length * 100):.1f}%" if length else "-"
@@ -322,29 +435,164 @@ class CuttingFrame(ttk.Frame):
                 ),
             )
 
+        self._draw_preview(data)
+        self._render_summary(data)
+
+    def _bar_cuts_text(self, bar: Dict[str, Any]) -> str:
+        cuts = bar.get("cuts", [])
+        chunks = []
+        for cut in cuts:
+            chunks.append(
+                _cut_text(
+                    cut.get("length_mm", 0),
+                    cut.get("angle_left", 0),
+                    cut.get("angle_right", 0),
+                )
+            )
+        waste = float(bar.get("waste_mm", 0) or 0)
+        if waste > 0:
+            chunks.append(f"odpad {waste:g}")
+        return " -- ".join(chunks)
+
+    def _render_summary(self, data: Dict[str, Any]) -> None:
         summary = data.get("summary", {})
         missing = data.get("missing", [])
         lines = [
-            f"Sztang użytych: {summary.get('bars_count', 0)}",
-            f"Materiał łącznie: {summary.get('total_length_mm', 0)} mm",
-            f"Zużycie: {summary.get('total_used_mm', 0)} mm",
-            f"Odpad: {summary.get('total_waste_mm', 0)} mm",
-            f"Wykorzystanie: {summary.get('usage_percent', 0)}%",
+            "PODSUMOWANIE",
+            "------------",
+            f"Sztang użytych:       {summary.get('bars_count', 0)}",
+            f"Materiał łącznie:     {summary.get('total_length_mm', 0)} mm",
+            f"Zużycie:              {summary.get('total_used_mm', 0)} mm",
+            f"Odpad:                {summary.get('total_waste_mm', 0)} mm",
+            f"Wykorzystanie:        {summary.get('usage_percent', 0)}%",
         ]
         if missing:
             lines.append("")
-            lines.append("BRAKI:")
+            lines.append("BRAKI")
+            lines.append("-----")
             for row in missing:
                 lines.append(
                     f"- {row.get('material_id')} / {row.get('length_mm')} mm / {row.get('label', '')}"
                 )
 
+        self.txt_summary.configure(state="normal")
         self.txt_summary.delete("1.0", "end")
         self.txt_summary.insert("1.0", "\n".join(lines))
+        self.txt_summary.configure(state="disabled")
+
+    def _draw_preview(self, data: Dict[str, Any]) -> None:
+        self.canvas.delete("all")
+        bars = data.get("bars_used", [])
+
+        width = max(800, self.canvas.winfo_width())
+        row_h = 72
+        left = 130
+        right = 30
+        top = 32
+        usable_w = max(300, width - left - right)
+
+        if not bars:
+            self.canvas.create_text(
+                20,
+                20,
+                text="Brak wyniku. Kliknij OBLICZ.",
+                anchor="nw",
+                fill=MUTED,
+                font=("Segoe UI", 12),
+            )
+            return
+
+        needed_height = top + len(bars) * row_h + 40
+        self.canvas.configure(scrollregion=(0, 0, width, needed_height), height=min(360, needed_height))
+
+        for idx, bar in enumerate(bars, start=1):
+            y = top + (idx - 1) * row_h
+            bar_len = float(bar.get("bar_length_mm", 0) or 0)
+            if bar_len <= 0:
+                continue
+
+            x0 = left
+            x1 = left + usable_w
+            bar_y0 = y + 18
+            bar_y1 = y + 42
+
+            label = f'{idx}. {bar.get("material_id", "")} / {bar_len:g} mm'
+            self.canvas.create_text(10, y + 24, text=label, anchor="w", fill=TEXT, font=("Segoe UI", 9, "bold"))
+
+            self.canvas.create_rectangle(x0, bar_y0, x1, bar_y1, fill="#1A1A22", outline=GRID)
+
+            cursor = x0
+            cuts = bar.get("cuts", [])
+            kerf = float(data.get("saw_kerf_mm", 0) or 0)
+
+            for cut_idx, cut in enumerate(cuts):
+                length = float(cut.get("length_mm", 0) or 0)
+                seg_w = max(2, usable_w * length / bar_len)
+                seg_x0 = cursor
+                seg_x1 = min(x1, cursor + seg_w)
+
+                self.canvas.create_rectangle(seg_x0, bar_y0, seg_x1, bar_y1, fill="#2A1016", outline=RED)
+                self._draw_angle_mark(seg_x0, bar_y0, bar_y1, float(cut.get("angle_left", 0) or 0), left_side=True)
+                self._draw_angle_mark(seg_x1, bar_y0, bar_y1, float(cut.get("angle_right", 0) or 0), left_side=False)
+
+                text = _cut_text(length, cut.get("angle_left", 0), cut.get("angle_right", 0))
+                if seg_w > 45:
+                    self.canvas.create_text(
+                        (seg_x0 + seg_x1) / 2,
+                        bar_y0 - 8,
+                        text=text,
+                        fill=TEXT,
+                        font=("Consolas", 9, "bold"),
+                    )
+
+                # Rzaz jako czerwona kreska między detalami.
+                cursor = seg_x1
+                if cut_idx < len(cuts) - 1 and kerf > 0:
+                    kerf_w = max(2, usable_w * kerf / bar_len)
+                    self.canvas.create_rectangle(cursor, bar_y0 - 3, cursor + kerf_w, bar_y1 + 3, fill=RED_HOT, outline=RED_HOT)
+                    cursor += kerf_w
+
+            waste = float(bar.get("waste_mm", 0) or 0)
+            if waste > 0:
+                waste_x0 = max(cursor, x0)
+                self.canvas.create_rectangle(waste_x0, bar_y0, x1, bar_y1, fill="#202026", outline=GRID)
+                if x1 - waste_x0 > 55:
+                    self.canvas.create_text(
+                        (waste_x0 + x1) / 2,
+                        bar_y1 + 13,
+                        text=f"odpad {waste:g} mm",
+                        fill=YELLOW,
+                        font=("Segoe UI", 8),
+                    )
+
+            usage = float(bar.get("used_mm", 0) or 0) / bar_len * 100 if bar_len else 0
+            self.canvas.create_text(
+                x1,
+                y + 5,
+                text=f"{usage:.1f}%",
+                anchor="e",
+                fill=GREEN if usage >= 80 else YELLOW,
+                font=("Segoe UI", 9, "bold"),
+            )
+
+    def _draw_angle_mark(self, x: float, y0: float, y1: float, angle: float, left_side: bool) -> None:
+        """Rysuje symbol cięcia na końcu segmentu.
+
+        0° jako pionowa kreska.
+        Kąt dodatni/ujemny jako ukośnik.
+        """
+        if abs(angle) < 0.001:
+            self.canvas.create_line(x, y0 - 4, x, y1 + 4, fill=TEXT, width=2)
+            return
+
+        if angle > 0:
+            self.canvas.create_line(x - 8, y1 + 5, x + 8, y0 - 5, fill=RED_HOT, width=3)
+        else:
+            self.canvas.create_line(x - 8, y0 - 5, x + 8, y1 + 5, fill=RED_HOT, width=3)
 
     def _save_last_result(self) -> None:
         if self._last_result is None:
-            messagebox.showwarning("Rozkrój", "Najpierw kliknij Oblicz.")
+            messagebox.showwarning("Rozkrój", "Najpierw kliknij OBLICZ.")
             return
         data = self._last_result.to_dict()
         try:
@@ -357,13 +605,19 @@ class CuttingFrame(ttk.Frame):
     def _refresh_stock_info(self) -> None:
         stock = load_stock_bars()
         by_mat: Dict[str, int] = {}
+        by_len: Dict[str, List[str]] = {}
         for bar in stock:
             by_mat[bar.material_id] = by_mat.get(bar.material_id, 0) + int(bar.qty)
+            by_len.setdefault(bar.material_id, []).append(f"{bar.length_mm:g}mm x{bar.qty}")
+
         if not by_mat:
-            self.var_stock_info.set("Brak danych stock_bars.json")
+            self.var_stock_info.set("Brak danych stock_bars.json — dodaj pierwszą sztangę.")
             return
-        txt = " | ".join([f"{mat}: {qty} szt." for mat, qty in sorted(by_mat.items())])
-        self.var_stock_info.set(txt)
+
+        chunks = []
+        for mat in sorted(by_mat):
+            chunks.append(f"{mat}: {', '.join(by_len.get(mat, []))}")
+        self.var_stock_info.set("STAN: " + " | ".join(chunks))
 
     def _delete_selected_cut(self) -> None:
         sel = self.tree_cuts.selection()
@@ -404,12 +658,12 @@ class _CutRowDialog:
         self.win.title("Dodaj pozycję cięcia")
         self.win.transient(parent.winfo_toplevel())
         self.win.grab_set()
-        apply_theme(self.win)
+        _apply_cutting_theme(self.win)
 
         self.v_material = tk.StringVar(value="profil_40x40x2")
-        self.v_length = tk.StringVar(value="1000")
-        self.v_angle_l = tk.StringVar(value="0")
-        self.v_angle_r = tk.StringVar(value="0")
+        self.v_length = tk.StringVar(value="1500")
+        self.v_angle_l = tk.StringVar(value="45")
+        self.v_angle_r = tk.StringVar(value="-45")
         self.v_qty = tk.StringVar(value="1")
         self.v_label = tk.StringVar(value="")
 
@@ -422,15 +676,13 @@ class _CutRowDialog:
             ("Opis", self.v_label),
         ]
         for row, (label, var) in enumerate(fields):
-            ttk.Label(self.win, text=label).grid(row=row, column=0, padx=8, pady=5, sticky="w")
-            ttk.Entry(self.win, textvariable=var, width=28).grid(
-                row=row, column=1, padx=8, pady=5, sticky="ew"
-            )
+            ttk.Label(self.win, text=label, style="Cut.TLabel").grid(row=row, column=0, padx=10, pady=6, sticky="w")
+            ttk.Entry(self.win, textvariable=var, width=30, style="Cut.TEntry").grid(row=row, column=1, padx=10, pady=6, sticky="ew")
 
-        btns = ttk.Frame(self.win)
-        btns.grid(row=len(fields), column=0, columnspan=2, pady=(8, 8))
-        ttk.Button(btns, text="OK", command=self._ok).pack(side="left", padx=4)
-        ttk.Button(btns, text="Anuluj", command=self.win.destroy).pack(side="left", padx=4)
+        btns = ttk.Frame(self.win, style="Cut.TFrame")
+        btns.grid(row=len(fields), column=0, columnspan=2, pady=(10, 10))
+        ttk.Button(btns, text="OK", command=self._ok, style="Cut.Red.TButton").pack(side="left", padx=5)
+        ttk.Button(btns, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(side="left", padx=5)
 
     def _ok(self) -> None:
         try:
@@ -455,7 +707,7 @@ class _StockBarDialog:
         self.win.title("Dodaj sztangę")
         self.win.transient(parent.winfo_toplevel())
         self.win.grab_set()
-        apply_theme(self.win)
+        _apply_cutting_theme(self.win)
 
         self.v_material = tk.StringVar(value="profil_40x40x2")
         self.v_name = tk.StringVar(value="Profil 40x40x2")
@@ -471,15 +723,13 @@ class _StockBarDialog:
             ("Lokalizacja", self.v_location),
         ]
         for row, (label, var) in enumerate(fields):
-            ttk.Label(self.win, text=label).grid(row=row, column=0, padx=8, pady=5, sticky="w")
-            ttk.Entry(self.win, textvariable=var, width=30).grid(
-                row=row, column=1, padx=8, pady=5, sticky="ew"
-            )
+            ttk.Label(self.win, text=label, style="Cut.TLabel").grid(row=row, column=0, padx=10, pady=6, sticky="w")
+            ttk.Entry(self.win, textvariable=var, width=32, style="Cut.TEntry").grid(row=row, column=1, padx=10, pady=6, sticky="ew")
 
-        btns = ttk.Frame(self.win)
-        btns.grid(row=len(fields), column=0, columnspan=2, pady=(8, 8))
-        ttk.Button(btns, text="OK", command=self._ok).pack(side="left", padx=4)
-        ttk.Button(btns, text="Anuluj", command=self.win.destroy).pack(side="left", padx=4)
+        btns = ttk.Frame(self.win, style="Cut.TFrame")
+        btns.grid(row=len(fields), column=0, columnspan=2, pady=(10, 10))
+        ttk.Button(btns, text="OK", command=self._ok, style="Cut.Red.TButton").pack(side="left", padx=5)
+        ttk.Button(btns, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(side="left", padx=5)
 
     def _ok(self) -> None:
         try:
@@ -500,9 +750,18 @@ class CuttingWindow:
     def __init__(self, master, config: Optional[Dict[str, Any]] = None):
         self.win = tk.Toplevel(master)
         self.win.title("Rozkrój / cięcie")
-        self.win.geometry("1180x720")
-        self.win.minsize(980, 560)
-        apply_theme(self.win)
+        self.win.geometry("1400x850")
+        self.win.minsize(1100, 700)
+        _apply_cutting_theme(self.win)
+
+        try:
+            self.win.state("zoomed")
+        except Exception:
+            try:
+                self.win.attributes("-zoomed", True)
+            except Exception:
+                pass
+
         frame = CuttingFrame(self.win, config=config or {})
         frame.pack(fill="both", expand=True)
         self.win.transient(master)
@@ -513,11 +772,7 @@ def open_window(parent, config=None, *args, **kwargs):
 
 
 def open_panel_cutting(parent, root=None, app=None, notebook=None, *args, **kwargs):
-    """Publiczne API podobne do innych modułów WM.
-
-    Można osadzić w kontenerze albo otworzyć jako panel w notebooku.
-    """
-
+    """Publiczne API podobne do innych modułów WM."""
     cfg = kwargs.get("config")
     if not isinstance(cfg, dict):
         maybe = getattr(parent, "config", None)
@@ -557,8 +812,13 @@ def open_panel_cutting(parent, root=None, app=None, notebook=None, *args, **kwar
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.title("Test Rozkrój")
-    root.geometry("1180x720")
+    root.title("Rozkrój / cięcie")
+    root.geometry("1400x850")
+    _apply_cutting_theme(root)
+    try:
+        root.state("zoomed")
+    except Exception:
+        pass
     frame = CuttingFrame(root)
     frame.pack(fill="both", expand=True)
     root.mainloop()
