@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
-from config.paths import get_path
 from core.cutting_models import CutItem, StockBar
+from core.ednor_paths import get_path, ensure_data_tree
 
 
 DEFAULT_STOCK = {
@@ -46,16 +46,19 @@ def _write_json(path: str, data: Any) -> str:
 
 
 def get_cutting_stock_path() -> str:
+    ensure_data_tree()
     return get_path("cutting.stock_bars_file")
 
 
 def get_cutting_jobs_dir() -> str:
+    ensure_data_tree()
     path = get_path("cutting.jobs_dir")
     os.makedirs(path, exist_ok=True)
     return path
 
 
 def get_cutting_reports_dir() -> str:
+    ensure_data_tree()
     path = get_path("cutting.reports_dir")
     os.makedirs(path, exist_ok=True)
     return path
