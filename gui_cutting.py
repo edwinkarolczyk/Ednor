@@ -35,6 +35,9 @@ from core.cutting_units import (
     validate_saw_angle,
 )
 
+APP_NAME = "Ednor"
+APP_SUBTITLE = "www.ednor.pl Program i firma dla Ciebie"
+
 STRATEGY_LABELS = {
     "balanced": "Warsztatowy balans",
     "min_waste": "Minimalny odpad",
@@ -201,7 +204,10 @@ class CuttingFrame(ttk.Frame):
         header = ttk.Frame(self, style="Cut.TFrame")
         header.pack(fill="x", pady=(0, 10))
 
-        ttk.Label(header, text="ROZKRÓJ / CIĘCIE", style="Cut.Title.TLabel").pack(side="left", padx=(0, 18))
+        title_box = ttk.Frame(header, style="Cut.TFrame")
+        title_box.pack(side="left", padx=(0, 18))
+        ttk.Label(title_box, text=f"{APP_NAME.upper()} — {APP_SUBTITLE}", style="Cut.Title.TLabel").pack(anchor="w")
+        ttk.Label(title_box, text="Rozkrój / cięcie", style="Cut.Muted.TLabel").pack(anchor="w")
 
         ttk.Label(header, text="Zlecenie:", style="Cut.TLabel").pack(side="left")
         self.var_job = tk.StringVar(value="ROZKROJ-TEST")
@@ -1416,7 +1422,7 @@ class _StockBarDialog:
 class CuttingWindow:
     def __init__(self, master, config: Optional[Dict[str, Any]] = None):
         self.win = tk.Toplevel(master)
-        self.win.title("Rozkrój / cięcie")
+        self.win.title(f"{APP_NAME} — Rozkrój / cięcie")
         self.win.geometry("1400x850")
         self.win.minsize(1100, 700)
         _apply_cutting_theme(self.win)
@@ -1458,7 +1464,7 @@ def open_panel_cutting(parent, root=None, app=None, notebook=None, *args, **kwar
     try:
         if hasattr(container, "add") and hasattr(container, "tabs"):
             frame = CuttingFrame(container, config=cfg)
-            container.add(frame, text="Rozkrój")
+            container.add(frame, text=f"{APP_NAME} — Rozkrój")
             container.select(frame)
             return frame
     except Exception:
@@ -1479,7 +1485,7 @@ def open_panel_cutting(parent, root=None, app=None, notebook=None, *args, **kwar
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.title("Rozkrój / cięcie")
+    root.title(f"{APP_NAME} — Rozkrój / cięcie")
     root.geometry("1400x850")
     _apply_cutting_theme(root)
     try:

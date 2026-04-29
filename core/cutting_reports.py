@@ -3,6 +3,9 @@ from __future__ import annotations
 from html import escape
 from typing import Any, Dict
 
+APP_NAME = "Ednor"
+APP_SUBTITLE = "program i firma dla Ciebie"
+
 
 def generate_cutting_report_html(result: Dict[str, Any]) -> str:
     job_id = str(result.get("job_id", "")).strip() or "ROZKROJ"
@@ -35,7 +38,7 @@ def generate_cutting_report_html(result: Dict[str, Any]) -> str:
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <title>Raport rozkroju - {escape(job_id)}</title>
+  <title>{APP_NAME} - Raport rozkroju - {escape(job_id)}</title>
   <style>
     body {{ font-family: Arial, sans-serif; margin: 24px; }}
     table {{ border-collapse: collapse; width: 100%; }}
@@ -45,7 +48,8 @@ def generate_cutting_report_html(result: Dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <h1>Raport rozkroju</h1>
+  <h1>{APP_NAME} — Raport rozkroju</h1>
+  <p><strong>{APP_SUBTITLE}</strong></p>
   <p><strong>Zlecenie:</strong> {escape(job_id)}</p>
   <p><strong>Strategia:</strong> {escape(strategy)}</p>
   <p>
@@ -69,7 +73,7 @@ def generate_cutting_report_html(result: Dict[str, Any]) -> str:
       {''.join(rows)}
     </tbody>
   </table>
-  <p class="muted">Wygenerowano z EDNOR / Rozkrój.</p>
+  <p class="muted">Wygenerowano z {APP_NAME} — {APP_SUBTITLE}.</p>
 </body>
 </html>
 """
