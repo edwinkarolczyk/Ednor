@@ -35,6 +35,10 @@ def magazyn_dir() -> Path:
     return data_root() / "magazyn"
 
 
+def transporty_dir() -> Path:
+    return data_root() / "transporty"
+
+
 def cutting_dir() -> Path:
     return data_root() / "rozkroj"
 
@@ -71,10 +75,15 @@ def cutting_stock_moves_file() -> Path:
     return magazyn_dir() / "stock_moves.jsonl"
 
 
+def transports_file() -> Path:
+    return transporty_dir() / "transports.json"
+
+
 def ensure_data_tree() -> None:
     for path in (
         data_root(),
         magazyn_dir(),
+        transporty_dir(),
         cutting_dir(),
         cutting_jobs_dir(),
         cutting_reports_dir(),
@@ -103,6 +112,8 @@ def get_path(key: str) -> str:
         "cutting.stock_moves_file": cutting_stock_moves_file(),
         "cutting.settings_file": cutting_settings_file(),
         "config.file": config_file(),
+        "transporty.dir": transporty_dir(),
+        "transporty.file": transports_file(),
         "cutting.jobs_dir": cutting_jobs_dir(),
         "cutting.reports_dir": cutting_reports_dir(),
         "cutting.calculations_dir": cutting_calculations_dir(),
