@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.2 - karta operatora
+# Wersja: 0.9.3 - surowce v2
 from __future__ import annotations
 
 import csv
@@ -27,6 +27,8 @@ from core.cutting_storage import (
     log_stock_move,
     update_cutting_setting,
     upsert_material,
+    build_material_display_name,
+    material_size_from_dims,
 )
 from core.cutting_units import (
     clamp_saw_angle,
@@ -1685,44 +1687,179 @@ class _MaterialDialog:
         self.win.grab_set()
         _apply_cutting_theme(self.win)
 
-        self.v_id = tk.StringVar(value=str(row.get("material_id", "")))
-        self.v_typ = tk.StringVar(value=str(row.get("typ", "profil")))
-        self.v_nazwa = tk.StringVar(value=str(row.get("nazwa", "")))
-        self.v_rozmiar = tk.StringVar(value=str(row.get("rozmiar", "")))
+        self._material_id = str(row.get("material_id", "")).strip()
+        self.v_typ = tk.StringVar(value=str(row.get("typ", "profil") or "profil"))
+
+        wymiary = row.get("wymiary") if isinstance(row.get("wymiary"), dict) else {}
+        rozmiar = str(row.get("rozmiar", "") or "").strip()
+        parsed = self._parse_existing_dims(str(row.get("typ", "profil")), rozmiar)
+
+        self.v_a = tk.StringVar(value=str(wymiary.get("a", parsed.get("a", "")) or ""))
+        self.v_b = tk.StringVar(value=str(wymiary.get("b", parsed.get("b", "")) or ""))
+        self.v_c = tk.StringVar(value=str(wymiary.get("c", parsed.get("c", "")) or ""))
         self.v_len = tk.StringVar(value=format_mm(float(row.get("domyslna_dlugosc_mm", 6000) or 6000)))
         self.v_active = tk.BooleanVar(value=bool(row.get("aktywny", True)))
         self.v_uwagi = tk.StringVar(value=str(row.get("uwagi", "")))
+        self.v_preview = tk.StringVar(value="")
+        self.v_hint = tk.StringVar(value="")
 
-        fields = [
-            ("ID, np. profil_40x30x2", self.v_id),
-            ("Typ, np. profil/rura/pret/plaskownik", self.v_typ),
-            ("Nazwa", self.v_nazwa),
-            ("Rozmiar, np. 40x30x2 albo fi 30", self.v_rozmiar),
-            ("Długość sztangi [mm/cm/m]", self.v_len),
-            ("Uwagi", self.v_uwagi),
-        ]
-        for i, (label, var) in enumerate(fields):
-            ttk.Label(self.win, text=label, style="Cut.TLabel").grid(row=i, column=0, padx=10, pady=6, sticky="w")
-            ttk.Entry(self.win, textvariable=var, width=36, style="Cut.TEntry").grid(row=i, column=1, padx=10, pady=6, sticky="ew")
-        ttk.Checkbutton(self.win, text="Aktywny", variable=self.v_active).grid(row=len(fields), column=1, sticky="w", padx=10)
+        ttk.Label(self.win, text="Rodzaj surowca", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
+        self.cbo_typ = ttk.Combobox(
+            self.win,
+            textvariable=self.v_typ,
+            values=("profil", "rura", "pręt", "płaskownik"),
+            width=34,
+        )
+        self.cbo_typ.grid(row=0, column=1, padx=10, pady=6, sticky="ew")
+        ttk.Label(
+            self.win,
+            text="Możesz wpisać własny rodzaj, np. kątownik.",
+            style="Cut.Muted.TLabel",
+        ).grid(row=1, column=1, padx=10, pady=(0, 6), sticky="w")
+
+        ttk.Label(self.win, text="Wymiary", style="Cut.Subtitle.TLabel").grid(
+            row=2, column=0, columnspan=2, padx=10, pady=(10, 4), sticky="w"
+        )
+
+        self.lbl_a = ttk.Label(self.win, text="A", style="Cut.TLabel")
+        self.lbl_a.grid(row=3, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(self.win, textvariable=self.v_a, width=36, style="Cut.TEntry").grid(row=3, column=1, padx=10, pady=6, sticky="ew")
+
+        self.lbl_b = ttk.Label(self.win, text="B", style="Cut.TLabel")
+        self.lbl_b.grid(row=4, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(self.win, textvariable=self.v_b, width=36, style="Cut.TEntry").grid(row=4, column=1, padx=10, pady=6, sticky="ew")
+
+        self.lbl_c = ttk.Label(self.win, text="C / ścianka", style="Cut.TLabel")
+        self.lbl_c.grid(row=5, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(self.win, textvariable=self.v_c, width=36, style="Cut.TEntry").grid(row=5, column=1, padx=10, pady=6, sticky="ew")
+
+        ttk.Label(self.win, textvariable=self.v_hint, style="Cut.Muted.TLabel").grid(
+            row=6, column=0, columnspan=2, padx=10, pady=(0, 8), sticky="w"
+        )
+
+        ttk.Label(self.win, text="Podgląd surowca", style="Cut.TLabel").grid(row=7, column=0, padx=10, pady=6, sticky="w")
+        ttk.Label(self.win, textvariable=self.v_preview, style="Cut.Title.TLabel").grid(row=7, column=1, padx=10, pady=6, sticky="w")
+
+        ttk.Label(self.win, text="Domyślna długość sztangi [mm]", style="Cut.TLabel").grid(row=8, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(self.win, textvariable=self.v_len, width=36, style="Cut.TEntry").grid(row=8, column=1, padx=10, pady=6, sticky="ew")
+
+        ttk.Label(self.win, text="Uwagi do surowca", style="Cut.TLabel").grid(row=9, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(self.win, textvariable=self.v_uwagi, width=36, style="Cut.TEntry").grid(row=9, column=1, padx=10, pady=6, sticky="ew")
+
+        ttk.Checkbutton(self.win, text="Aktywny", variable=self.v_active).grid(row=10, column=1, sticky="w", padx=10)
+
+        for var in (self.v_typ, self.v_a, self.v_b, self.v_c):
+            var.trace_add("write", lambda *_: self._update_preview())
+        self.cbo_typ.bind("<<ComboboxSelected>>", lambda _e: self._update_preview())
+        self._update_preview()
+
         btns = ttk.Frame(self.win, style="Cut.TFrame")
-        btns.grid(row=len(fields) + 1, column=0, columnspan=2, pady=(10, 10))
+        btns.grid(row=11, column=0, columnspan=2, pady=(10, 10))
         ttk.Button(btns, text="OK", command=self._ok, style="Cut.Red.TButton").pack(side="left", padx=5)
         ttk.Button(btns, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(side="left", padx=5)
+        self.win.columnconfigure(1, weight=1)
+
+    def _parse_existing_dims(self, typ: str, rozmiar: str) -> Dict[str, str]:
+        typ_norm = str(typ or "").strip().lower()
+        text = str(rozmiar or "").strip().lower().replace(" ", "")
+        out = {"a": "", "b": "", "c": ""}
+        if not text:
+            return out
+
+        if typ_norm == "rura":
+            text = text.replace("fi", "")
+            parts = [p for p in text.split("x") if p]
+            if len(parts) >= 1:
+                out["a"] = parts[0]
+            if len(parts) >= 2:
+                out["b"] = parts[1]
+            return out
+
+        if typ_norm in ("pret", "pręt"):
+            out["a"] = text.replace("fi", "")
+            return out
+
+        parts = [p for p in text.split("x") if p]
+        if len(parts) >= 1:
+            out["a"] = parts[0]
+        if len(parts) >= 2:
+            out["b"] = parts[1]
+        if len(parts) >= 3:
+            out["c"] = parts[2]
+        return out
+
+    def _dimension_payload(self) -> Dict[str, str]:
+        return {
+            "a": self.v_a.get().strip(),
+            "b": self.v_b.get().strip(),
+            "c": self.v_c.get().strip(),
+        }
+
+    def _current_size(self) -> str:
+        dims = self._dimension_payload()
+        return material_size_from_dims(
+            self.v_typ.get().strip(),
+            dims.get("a", ""),
+            dims.get("b", ""),
+            dims.get("c", ""),
+        )
+
+    def _update_preview(self) -> None:
+        typ = self.v_typ.get().strip()
+        typ_norm = typ.lower()
+
+        if typ_norm in ("profil", "profil zamknięty", "profil_zamkniety"):
+            self.lbl_a.configure(text="A / szerokość profilu")
+            self.lbl_b.configure(text="B / wysokość profilu")
+            self.lbl_c.configure(text="C / ścianka")
+            self.v_hint.set("Profil: A x B x C, np. 40 x 30 x 2")
+        elif typ_norm == "rura":
+            self.lbl_a.configure(text="A / średnica fi")
+            self.lbl_b.configure(text="B / ścianka")
+            self.lbl_c.configure(text="C / nieużywane")
+            self.v_hint.set("Rura: fi A x B, np. fi30 x 2")
+        elif typ_norm in ("pret", "pręt"):
+            self.lbl_a.configure(text="A / średnica fi")
+            self.lbl_b.configure(text="B / nieużywane")
+            self.lbl_c.configure(text="C / nieużywane")
+            self.v_hint.set("Pręt: fi A, np. fi12")
+        elif typ_norm in ("plaskownik", "płaskownik"):
+            self.lbl_a.configure(text="A / szerokość")
+            self.lbl_b.configure(text="B / grubość")
+            self.lbl_c.configure(text="C / nieużywane")
+            self.v_hint.set("Płaskownik: A x B, np. 50 x 5")
+        else:
+            self.lbl_a.configure(text="A / wymiar 1")
+            self.lbl_b.configure(text="B / wymiar 2")
+            self.lbl_c.configure(text="C / wymiar 3")
+            self.v_hint.set("Własny rodzaj: wpisz potrzebne wymiary A/B/C.")
+
+        size = self._current_size()
+        self.v_preview.set(build_material_display_name(typ, size) if size else typ)
 
     def _ok(self) -> None:
         try:
+            typ = self.v_typ.get().strip()
+            dims = self._dimension_payload()
+            rozmiar = self._current_size()
+            display = build_material_display_name(typ, rozmiar)
+            if not typ:
+                raise ValueError("Rodzaj surowca jest wymagany.")
+            if not rozmiar:
+                raise ValueError("Wymiary surowca są wymagane.")
             self.result = {
-                "material_id": self.v_id.get().strip(),
-                "typ": self.v_typ.get().strip(),
-                "nazwa": self.v_nazwa.get().strip(),
-                "rozmiar": self.v_rozmiar.get().strip(),
+                "material_id": self._material_id,
+                "typ": typ,
+                "display_name": display,
+                "nazwa": display,
+                "rozmiar": rozmiar,
+                "wymiary": dims,
                 "domyslna_dlugosc_mm": parse_length_to_mm(self.v_len.get()),
                 "aktywny": bool(self.v_active.get()),
                 "uwagi": self.v_uwagi.get().strip(),
             }
-        except Exception:
-            messagebox.showerror("Surowiec", "Sprawdź dane surowca.")
+        except Exception as exc:
+            messagebox.showerror("Surowiec", str(exc))
             return
         self.win.destroy()
 
