@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Dict, List, Optional
 
 from core.cutting_models import CutItem
@@ -57,7 +57,7 @@ def strategy_label_to_key(value: str) -> str:
     return "balanced"
 
 
-MAT_COLUMNS = ("material_id", "typ", "nazwa", "rozmiar", "stock", "length")
+MAT_COLUMNS = ("display",)
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
 RESULT_COLUMNS = ("bar", "source", "cuts", "waste", "usage")
 CALC_COLUMNS = ("id", "created", "status", "job", "bars", "usage")
@@ -265,6 +265,8 @@ class CuttingFrame(ttk.Frame):
         top.pack(fill="x", pady=(0, 6))
         ttk.Label(top, text="Baza surowców", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
         ttk.Button(top, text="+ Surowiec", command=self._add_material_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="+ DODAJ STAN", command=self._add_stock_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
+        ttk.Button(top, text="+ DODAJ ODPAD", command=self._add_remnant_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_material, style="Cut.TButton").pack(side="right")
 
         self.tree_materials = ttk.Treeview(
@@ -276,25 +278,8 @@ class CuttingFrame(ttk.Frame):
             style="Cut.Treeview",
         )
         self.tree_materials.pack(fill="x", expand=False, pady=(0, 10))
-        labels = {
-            "material_id": "ID",
-            "typ": "Typ",
-            "nazwa": "Nazwa",
-            "rozmiar": "Rozmiar",
-            "stock": "Stan",
-            "length": "Sztanga",
-        }
-        widths = {
-            "material_id": 145,
-            "typ": 70,
-            "nazwa": 135,
-            "rozmiar": 95,
-            "stock": 60,
-            "length": 120,
-        }
-        for col in MAT_COLUMNS:
-            self.tree_materials.heading(col, text=labels[col])
-            self.tree_materials.column(col, width=widths[col], anchor="w")
+        self.tree_materials.heading("display", text="Surowiec")
+        self.tree_materials.column("display", width=380, anchor="w")
         self.tree_materials.bind("<Double-1>", lambda _e: self._edit_selected_material())
 
     def _refresh_materials(self) -> None:
@@ -304,18 +289,64 @@ class CuttingFrame(ttk.Frame):
             for iid in self.tree_materials.get_children():
                 self.tree_materials.delete(iid)
             for m in self._materials:
+                name = str(m.get("display_name") or m.get("nazwa") or "")
+                stock_mb = float(m.get("stock_mb", 0) or 0)
+                label = f"{name} (stan {stock_mb:g} mb)"
                 self.tree_materials.insert(
                     "",
                     "end",
-                    values=(
-                        m.get("material_id", ""),
-                        m.get("typ", ""),
-                        m.get("nazwa", ""),
-                        m.get("rozmiar", ""),
-                        f'{m.get("stock_qty", 0)} szt.',
-                        format_mm(float(m.get("domyslna_dlugosc_mm", 0) or 0)),
-                    ),
+                    iid=m.get("material_id"),
+                    values=(label,),
                 )
+
+
+    def _add_stock_dialog(self):
+        sel = self.tree_materials.selection()
+        if not sel:
+            messagebox.showwarning("Magazyn", "Wybierz surowiec")
+            return
+
+        material_id = sel[0]
+
+        val = simpledialog.askstring(
+            "Dodaj stan",
+            "Podaj długość (np. 12000mm lub 12m):",
+        )
+        if not val:
+            return
+
+        try:
+            mm = parse_length_to_mm(val)
+            add_stock_bar(material_id, "bar", mm, 1)
+        except Exception as e:
+            messagebox.showerror("Błąd", str(e))
+            return
+
+        self._refresh_materials()
+
+    def _add_remnant_dialog(self):
+        sel = self.tree_materials.selection()
+        if not sel:
+            messagebox.showwarning("Magazyn", "Wybierz surowiec")
+            return
+
+        material_id = sel[0]
+
+        val = simpledialog.askstring(
+            "Dodaj odpad",
+            "Podaj długość odpadu (np. 1200mm):",
+        )
+        if not val:
+            return
+
+        try:
+            mm = parse_length_to_mm(val)
+            add_remnant(material_id, mm, 1)
+        except Exception as e:
+            messagebox.showerror("Błąd", str(e))
+            return
+
+        self._refresh_materials()
 
     def _build_cut_list(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
