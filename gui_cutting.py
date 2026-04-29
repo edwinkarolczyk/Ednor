@@ -368,25 +368,19 @@ class CuttingFrame(ttk.Frame):
         top.pack(fill="x", pady=(0, 6))
         ttk.Label(top, text="Lista do cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
-        ttk.Button(top, text="+ DODAJ ELEMENT DO CIĘCIA", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
-        ttk.Button(top, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
-        ttk.Button(top, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
-        ttk.Button(top, text="Sortuj od najdłuższych", command=self._sort_cuts_longest_first, style="Cut.TButton").pack(side="right", padx=(0, 6))
-        ttk.Button(top, text="Wyczyść listę", command=self._clear_cuts, style="Cut.TButton").pack(side="right", padx=(0, 12))
-        ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
+        btns = ttk.Frame(top, style="Cut.TFrame")
+        btns.pack(side="right")
+        ttk.Button(btns, text="+ DODAJ", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="left", padx=3)
+        ttk.Button(btns, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(btns, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(btns, text="Sortuj ↓", command=self._sort_cuts_longest_first, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(btns, text="Wyczyść", command=self._clear_cuts, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(btns, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
 
         tools = ttk.Frame(parent, style="Cut.TFrame")
         tools.pack(fill="x", pady=(0, 6))
         ttk.Button(tools, text="Import CSV", command=self._import_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
         ttk.Button(tools, text="Eksport CSV", command=self._export_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
-        ttk.Label(tools, text="Szybkie długości:", style="Cut.Muted.TLabel").pack(side="left", padx=(14, 4))
-        for value in (1500, 2000, 2500, 3000):
-            ttk.Button(
-                tools,
-                text=str(value),
-                command=lambda v=value: self._quick_add_cut_length(v),
-                style="Cut.TButton",
-            ).pack(side="left", padx=(0, 4))
         ttk.Label(
             tools,
             text="CSV kolumny: material_id,length_mm,angle_left,angle_right,qty,label",
@@ -496,7 +490,6 @@ class CuttingFrame(ttk.Frame):
             bg="#09090C",
             highlightthickness=1,
             highlightbackground=GRID,
-            height=300,
         )
         self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
 
@@ -655,21 +648,6 @@ class CuttingFrame(ttk.Frame):
             return
         self._settings["last_material_id"] = material_id
         update_cutting_setting("last_material_id", material_id)
-
-    def _quick_add_cut_length(self, length_mm: float) -> None:
-        """Szybkie dodanie typowej długości dla zaznaczonego/ostatniego surowca."""
-        material_id = self._selected_material_id()
-        if not material_id:
-            messagebox.showwarning("Rozkrój", "Najpierw wybierz surowiec.")
-            return
-        self._insert_cut_row(
-            material_id=material_id,
-            length_mm=float(length_mm),
-            angle_left=0,
-            angle_right=0,
-            qty=1,
-            label=f"szybkie {int(length_mm)}",
-        )
 
     def _sort_cuts_longest_first(self) -> None:
         """Sortuje listę cięć malejąco po długości, zachowując wartości wierszy."""
