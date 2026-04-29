@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from core.ednor_paths import (
     cutting_reports_dir,
     cutting_settings_file,
     cutting_stock_bars_file,
+    cutting_stock_moves_file,
     ensure_data_tree,
 )
 
@@ -112,6 +114,39 @@ def _write_json(path: str, data: Any) -> str:
         json.dump(data, handle, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     return path
+
+
+def _slugify_material(value: str) -> str:
+    text = str(value or "").strip().lower()
+    repl = {
+        "ą": "a",
+        "ć": "c",
+        "ę": "e",
+        "ł": "l",
+        "ń": "n",
+        "ó": "o",
+        "ś": "s",
+        "ż": "z",
+        "ź": "z",
+    }
+    for src, dst in repl.items():
+        text = text.replace(src, dst)
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text or "material"
+
+
+def _title_material_type(typ: str) -> str:
+    typ = str(typ or "").strip().lower()
+    labels = {
+        "profil": "Profil",
+        "rura": "Rura",
+        "pret": "Pręt",
+        "pręt": "Pręt",
+        "plaskownik": "Płaskownik",
+        "płaskownik": "Płaskownik",
+    }
+    return labels.get(typ, typ.capitalize() if typ else "Surowiec")
 
 
 def _material_stock_qty(data: Dict[str, Any], material_id: str) -> int:
@@ -247,19 +282,35 @@ def material_label(row: Dict[str, Any]) -> str:
 
 def upsert_material(payload: Dict[str, Any]) -> str:
     data = load_materials_raw()
+    typ = str(payload.get("typ", "")).strip()
+    nazwa = str(payload.get("nazwa") or payload.get("display_name") or "").strip()
+    rozmiar = str(payload.get("rozmiar", "")).strip()
+
+    if not nazwa:
+        nazwa = f"{_title_material_type(typ)} {rozmiar}".strip() if (typ or rozmiar) else "Surowiec"
+
     material_id = str(payload.get("material_id", "")).strip()
     if not material_id:
-        raise ValueError("material_id jest wymagane")
+        base_for_id = f"{typ} {rozmiar}".strip() or nazwa
+        material_id = _slugify_material(base_for_id)
 
     row = {
         "material_id": material_id,
-        "typ": str(payload.get("typ", "")).strip(),
-        "nazwa": str(payload.get("nazwa", material_id)).strip() or material_id,
-        "rozmiar": str(payload.get("rozmiar", "")).strip(),
+        "typ": typ,
+        "nazwa": nazwa,
+        "display_name": str(payload.get("display_name") or nazwa).strip(),
+        "rozmiar": rozmiar,
         "domyslna_dlugosc_mm": float(payload.get("domyslna_dlugosc_mm", 6000) or 6000),
         "aktywny": bool(payload.get("aktywny", True)),
         "uwagi": str(payload.get("uwagi", "")).strip(),
     }
+    if isinstance(payload.get("wymiary"), dict):
+        row["wymiary"] = payload["wymiary"]
+    if payload.get("cena_za_m") not in (None, ""):
+        try:
+            row["cena_za_m"] = float(payload.get("cena_za_m"))
+        except Exception:
+            row["cena_za_m"] = payload.get("cena_za_m")
 
     updated = False
     out = []
@@ -328,15 +379,13 @@ def add_stock_bar(
 
 
 def log_stock_move(payload: Dict[str, Any]) -> str:
-    data = load_cutting_stock_raw()
-    moves = data.get("moves", [])
-    if not isinstance(moves, list):
-        moves = []
     entry = dict(payload or {})
-    entry["at"] = _now_iso()
-    moves.append(entry)
-    data["moves"] = moves
-    return save_cutting_stock_raw(data)
+    entry.setdefault("at", _now_iso())
+    ensure_data_tree()
+    path = cutting_stock_moves_file()
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return str(path)
 
 
 def add_remnant(material_id: str, length_mm: float, qty: int = 1) -> str:
