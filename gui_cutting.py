@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.6.0
+# Wersja: 0.7.0
 from __future__ import annotations
 
 import csv
@@ -33,6 +33,13 @@ from core.cutting_units import (
     parse_length_to_mm,
     validate_saw_angle,
 )
+
+STRATEGY_LABELS = {
+    "balanced": "Warsztatowy balans",
+    "min_waste": "Minimalny odpad",
+    "min_bars": "Najmniej sztang",
+    "min_cuts": "Najmniej cięć",
+}
 
 MAT_COLUMNS = ("material_id", "typ", "nazwa", "rozmiar", "stock", "length")
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
@@ -190,6 +197,17 @@ class CuttingFrame(ttk.Frame):
         ttk.Label(header, text="Min. odpad [mm]:", style="Cut.TLabel").pack(side="left")
         self.var_min_offcut = tk.StringVar(value="300")
         ttk.Entry(header, textvariable=self.var_min_offcut, width=9, style="Cut.TEntry").pack(side="left", padx=(5, 14))
+
+        ttk.Label(header, text="Strategia:", style="Cut.TLabel").pack(side="left")
+        self.var_strategy = tk.StringVar(value="balanced")
+        self.cbo_strategy = ttk.Combobox(
+            header,
+            textvariable=self.var_strategy,
+            values=list(STRATEGY_LABELS.keys()),
+            width=14,
+            state="readonly",
+        )
+        self.cbo_strategy.pack(side="left", padx=(5, 14))
 
         ttk.Button(header, text="Ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right")
 
@@ -616,6 +634,7 @@ class CuttingFrame(ttk.Frame):
             stock_bars=stock,
             saw_kerf_mm=saw_kerf,
             min_reusable_offcut_mm=min_offcut,
+            strategy=self.var_strategy.get(),
         )
         self._last_result = result
         self._last_result_dict = result.to_dict()
@@ -628,6 +647,7 @@ class CuttingFrame(ttk.Frame):
             "job_id": self.var_job.get().strip() or "ROZKROJ",
             "saw_kerf_mm": saw_kerf,
             "min_reusable_offcut_mm": min_offcut,
+            "strategy": self.var_strategy.get(),
             "items": [item.to_dict() for item in items],
         }
         try:
@@ -689,9 +709,12 @@ class CuttingFrame(ttk.Frame):
     def _render_summary(self, data: Dict[str, Any]) -> None:
         summary = data.get("summary", {})
         missing = data.get("missing", [])
+        strategy = str(data.get("strategy") or self.var_strategy.get() or "balanced")
+        strategy_txt = STRATEGY_LABELS.get(strategy, strategy)
         lines = [
             "PODSUMOWANIE",
             "------------",
+            f"Strategia:            {strategy_txt}",
             f"Sztang użytych:       {summary.get('bars_count', 0)}",
             f"Materiał łącznie:     {format_mm(float(summary.get('total_length_mm', 0) or 0))}",
             f"Zużycie:              {format_mm(float(summary.get('total_used_mm', 0) or 0))}",
@@ -1067,6 +1090,8 @@ class CuttingFrame(ttk.Frame):
         if not result:
             return
         self.var_job.set(str(job.get("job_id") or result.get("job_id") or calc_id))
+        if result.get("strategy"):
+            self.var_strategy.set(str(result.get("strategy")))
         self._last_result_dict = result
         self._render_result(result)
 

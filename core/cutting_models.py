@@ -1,5 +1,5 @@
 # Plik: core/cutting_models.py
-# Wersja: 0.1.0
+# Wersja: 0.2.0
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -122,6 +122,7 @@ class CuttingResult:
     min_reusable_offcut_mm: float
     bars_used: List[UsedBar] = field(default_factory=list)
     missing: List[Dict[str, Any]] = field(default_factory=list)
+    strategy: str = "balanced"
 
     def to_dict(self) -> Dict[str, Any]:
         total_waste = sum(bar.waste_mm for bar in self.bars_used)
@@ -133,6 +134,7 @@ class CuttingResult:
             "job_id": self.job_id,
             "saw_kerf_mm": self.saw_kerf_mm,
             "min_reusable_offcut_mm": self.min_reusable_offcut_mm,
+            "strategy": self.strategy,
             "bars_used": [bar.to_dict() for bar in self.bars_used],
             "missing": self.missing,
             "summary": {
