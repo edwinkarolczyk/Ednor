@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.1 - usunięto szybkie długości
+# Wersja: 0.9.2 - karta operatora
 from __future__ import annotations
 
 import csv
@@ -112,6 +112,19 @@ def _cut_text(length: Any, angle_l: Any, angle_r: Any) -> str:
         f"{format_mm(float(length or 0))}"
         f"{_cut_mark(float(angle_r or 0), 'R')}"
     )
+
+
+def _operator_cut_shape(angle_l: Any, angle_r: Any) -> str:
+    """Zwraca prosty symbol ukosu dla operatora.
+
+    Przykłady:
+      0 / 0      -> |---|
+      45 / -45   -> /---\
+      -45 / 45   -> \---/
+      45 / 45    -> /---/
+    """
+
+    return f"{_cut_mark(float(angle_l or 0), 'L')}---{_cut_mark(float(angle_r or 0), 'R')}"
 
 
 def _apply_cutting_theme(root: tk.Misc) -> None:
@@ -363,6 +376,210 @@ class CuttingFrame(ttk.Frame):
         if callable(refresh):
             refresh()
 
+    def _operator_steps(self, data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Buduje listę kroków cięcia dla operatora z ostatniego wyniku.
+
+        Nie zmienia algorytmu ani kolejności optymalizacji.
+        To jest tylko czytelna karta pracy.
+        """
+
+        data = data or self._last_result_dict or {}
+        steps: List[Dict[str, Any]] = []
+        global_step = 1
+
+        for bar_no, bar in enumerate(data.get("bars_used", []) or [], start=1):
+            material_id = str(bar.get("material_id", "")).strip()
+            source = str(bar.get("source", "")).strip()
+            bar_length = float(bar.get("bar_length_mm", 0) or 0)
+            waste = float(bar.get("waste_mm", 0) or 0)
+
+            for local_step, cut in enumerate(bar.get("cuts", []) or [], start=1):
+                length_mm = float(cut.get("length_mm", 0) or 0)
+                angle_l = float(cut.get("angle_left", 0) or 0)
+                angle_r = float(cut.get("angle_right", 0) or 0)
+                label = str(cut.get("label", "") or "").strip()
+
+                steps.append(
+                    {
+                        "global_step": global_step,
+                        "bar_no": bar_no,
+                        "local_step": local_step,
+                        "material_id": material_id,
+                        "material": self._display_material(material_id),
+                        "source": source,
+                        "bar_length_mm": bar_length,
+                        "length_mm": length_mm,
+                        "angle_left": angle_l,
+                        "angle_right": angle_r,
+                        "shape": _operator_cut_shape(angle_l, angle_r),
+                        "label": label,
+                        "waste_mm": waste,
+                    }
+                )
+                global_step += 1
+
+        return steps
+
+    def _operator_card_text(self, data: Optional[Dict[str, Any]] = None) -> str:
+        data = data or self._last_result_dict or {}
+        job_id = str(data.get("job_id") or self.var_job.get() or DEFAULT_JOB_ID)
+        bars = data.get("bars_used", []) or []
+
+        lines: List[str] = []
+        lines.append("EDNOR — KARTA CIĘCIA / OPERATOR")
+        lines.append(f"Zlecenie: {job_id}")
+        lines.append("=" * 72)
+
+        if not bars:
+            lines.append("Brak obliczonego wyniku.")
+            return "\n".join(lines)
+
+        for bar_no, bar in enumerate(bars, start=1):
+            material_id = str(bar.get("material_id", "")).strip()
+            material = self._display_material(material_id)
+            source = str(bar.get("source", "") or "").strip()
+            bar_length = float(bar.get("bar_length_mm", 0) or 0)
+            waste = float(bar.get("waste_mm", 0) or 0)
+            cuts = bar.get("cuts", []) or []
+
+            lines.append("")
+            lines.append(
+                f"SZTANGA {bar_no}: {material} | {format_mm(bar_length)} | źródło: {source or '-'}"
+            )
+            lines.append("-" * 72)
+
+            for local_step, cut in enumerate(cuts, start=1):
+                length_mm = float(cut.get("length_mm", 0) or 0)
+                angle_l = float(cut.get("angle_left", 0) or 0)
+                angle_r = float(cut.get("angle_right", 0) or 0)
+                label = str(cut.get("label", "") or "").strip()
+                shape = _operator_cut_shape(angle_l, angle_r)
+                label_txt = f" | {label}" if label else ""
+                lines.append(
+                    f"{local_step:>2}. {length_mm:g} mm   {shape:<5}   "
+                    f"{angle_l:g}° / {angle_r:g}°{label_txt}"
+                )
+
+            lines.append(f"ODPAD: {format_mm(waste)}")
+
+        return "\n".join(lines)
+
+    def _render_operator_card(self, data: Optional[Dict[str, Any]] = None) -> None:
+        if not hasattr(self, "txt_operator_card"):
+            return
+        self.txt_operator_card.configure(state="normal")
+        self.txt_operator_card.delete("1.0", "end")
+        self.txt_operator_card.insert("1.0", self._operator_card_text(data))
+        self.txt_operator_card.configure(state="disabled")
+
+    def _export_operator_card_csv(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Karta operatora", "Najpierw oblicz albo wczytaj kalkulację.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Eksport karty operatora CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Wszystkie pliki", "*.*")],
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(
+                    [
+                        "job_id",
+                        "bar_no",
+                        "step_no",
+                        "material",
+                        "source",
+                        "bar_length_mm",
+                        "length_mm",
+                        "shape",
+                        "angle_left",
+                        "angle_right",
+                        "label",
+                        "waste_mm",
+                    ]
+                )
+                job_id = str(self._last_result_dict.get("job_id") or self.var_job.get() or DEFAULT_JOB_ID)
+                for step in self._operator_steps(self._last_result_dict):
+                    writer.writerow(
+                        [
+                            job_id,
+                            step["bar_no"],
+                            step["local_step"],
+                            step["material"],
+                            step["source"],
+                            f'{float(step["bar_length_mm"]):g}',
+                            f'{float(step["length_mm"]):g}',
+                            step["shape"],
+                            f'{float(step["angle_left"]):g}',
+                            f'{float(step["angle_right"]):g}',
+                            step["label"],
+                            f'{float(step["waste_mm"]):g}',
+                        ]
+                    )
+        except Exception as exc:
+            messagebox.showerror("Karta operatora", f"Nie udało się zapisać CSV:\n{exc}")
+            return
+
+        messagebox.showinfo("Karta operatora", f"Zapisano:\n{path}")
+
+    def _export_operator_card_html(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Karta operatora", "Najpierw oblicz albo wczytaj kalkulację.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Eksport karty operatora HTML",
+            defaultextension=".html",
+            filetypes=[("HTML", "*.html"), ("Wszystkie pliki", "*.*")],
+        )
+        if not path:
+            return
+
+        text = self._operator_card_text(self._last_result_dict)
+        safe = (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        html = f"""<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <title>Ednor - Karta operatora</title>
+  <style>
+    body {{
+      font-family: Consolas, monospace;
+      margin: 24px;
+      background: #fff;
+      color: #111;
+    }}
+    pre {{
+      font-size: 16px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }}
+  </style>
+</head>
+<body>
+<pre>{safe}</pre>
+</body>
+</html>
+"""
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(html)
+        except Exception as exc:
+            messagebox.showerror("Karta operatora", f"Nie udało się zapisać HTML:\n{exc}")
+            return
+
+        messagebox.showinfo("Karta operatora", f"Zapisano:\n{path}")
+
     def _build_cut_list(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
         top.pack(fill="x", pady=(0, 6))
@@ -506,6 +723,45 @@ class CuttingFrame(ttk.Frame):
             font=("Consolas", 10),
         )
         self.txt_summary.pack(fill="x", pady=(10, 0))
+
+
+        operator_box = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        operator_box.pack(fill="both", expand=True, pady=(10, 0))
+
+        operator_header = ttk.Frame(operator_box, style="Cut.Panel.TFrame")
+        operator_header.pack(fill="x", padx=10, pady=(8, 0))
+
+        ttk.Label(
+            operator_header,
+            text="Karta operatora",
+            style="Cut.Subtitle.TLabel",
+        ).pack(side="left")
+
+        ttk.Button(
+            operator_header,
+            text="Eksport karty CSV",
+            command=self._export_operator_card_csv,
+            style="Cut.TButton",
+        ).pack(side="right", padx=(6, 0))
+
+        ttk.Button(
+            operator_header,
+            text="Eksport karty HTML",
+            command=self._export_operator_card_html,
+            style="Cut.TButton",
+        ).pack(side="right", padx=(6, 0))
+
+        self.txt_operator_card = tk.Text(
+            operator_box,
+            height=12,
+            bg="#0D0D11",
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="none",
+            font=("Consolas", 12),
+        )
+        self.txt_operator_card.pack(fill="both", expand=True, padx=10, pady=10)
 
     def _on_window_resize(self, _event=None) -> None:
         """Opóźnione przerysowanie preview po zmianie rozmiaru okna."""
@@ -879,6 +1135,7 @@ class CuttingFrame(ttk.Frame):
             )
 
         self._draw_preview(data)
+        self._render_operator_card(data)
         self._render_summary(data)
 
     def _bar_cuts_text(self, bar: Dict[str, Any]) -> str:
@@ -1398,6 +1655,7 @@ class CuttingFrame(ttk.Frame):
             self.var_strategy.set(STRATEGY_LABELS.get(key, key))
         self._last_result_dict = result
         self._render_result(result)
+        self._render_operator_card(result)
 
     def _show_paths(self) -> None:
         paths = get_cutting_debug_paths()
