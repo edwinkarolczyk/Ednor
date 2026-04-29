@@ -325,6 +325,7 @@ class CuttingFrame(ttk.Frame):
 
         self._refresh_materials()
         self._refresh_stock_info()
+        self._refresh_stock_table_if_exists()
 
     def _add_remnant_dialog(self):
         sel = self.tree_materials.selection()
@@ -351,6 +352,13 @@ class CuttingFrame(ttk.Frame):
 
         self._refresh_materials()
         self._refresh_stock_info()
+        self._refresh_stock_table_if_exists()
+
+    def _refresh_stock_table_if_exists(self) -> None:
+        """Odśwież tabelę magazynu, jeśli zakładka/widok magazynu już istnieje."""
+        refresh = getattr(self, "_refresh_stock_table", None)
+        if callable(refresh):
+            refresh()
 
     def _build_cut_list(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
@@ -360,6 +368,7 @@ class CuttingFrame(ttk.Frame):
         ttk.Button(top, text="+ DODAJ ELEMENT DO CIĘCIA", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
+        ttk.Button(top, text="Sortuj od najdłuższych", command=self._sort_cuts_longest_first, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Wyczyść listę", command=self._clear_cuts, style="Cut.TButton").pack(side="right", padx=(0, 12))
         ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
 
@@ -367,6 +376,14 @@ class CuttingFrame(ttk.Frame):
         tools.pack(fill="x", pady=(0, 6))
         ttk.Button(tools, text="Import CSV", command=self._import_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
         ttk.Button(tools, text="Eksport CSV", command=self._export_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
+        ttk.Label(tools, text="Szybkie długości:", style="Cut.Muted.TLabel").pack(side="left", padx=(14, 4))
+        for value in (1500, 2000, 2500, 3000):
+            ttk.Button(
+                tools,
+                text=str(value),
+                command=lambda v=value: self._quick_add_cut_length(v),
+                style="Cut.TButton",
+            ).pack(side="left", padx=(0, 4))
         ttk.Label(
             tools,
             text="CSV kolumny: material_id,length_mm,angle_left,angle_right,qty,label",
@@ -625,6 +642,84 @@ class CuttingFrame(ttk.Frame):
         self._settings["last_material_id"] = material_id
         update_cutting_setting("last_material_id", material_id)
 
+    def _quick_add_cut_length(self, length_mm: float) -> None:
+        """Szybkie dodanie typowej długości dla zaznaczonego/ostatniego surowca."""
+        material_id = self._selected_material_id()
+        if not material_id:
+            messagebox.showwarning("Rozkrój", "Najpierw wybierz surowiec.")
+            return
+        self._insert_cut_row(
+            material_id=material_id,
+            length_mm=float(length_mm),
+            angle_left=0,
+            angle_right=0,
+            qty=1,
+            label=f"szybkie {int(length_mm)}",
+        )
+
+    def _sort_cuts_longest_first(self) -> None:
+        """Sortuje listę cięć malejąco po długości, zachowując wartości wierszy."""
+        rows = []
+        for iid in self.tree_cuts.get_children():
+            values = self.tree_cuts.item(iid, "values")
+            try:
+                length = parse_length_to_mm(str(values[1]))
+            except Exception:
+                length = 0.0
+            rows.append((length, values))
+
+        if not rows:
+            return
+
+        rows.sort(key=lambda row: row[0], reverse=True)
+
+        for iid in self.tree_cuts.get_children():
+            self.tree_cuts.delete(iid)
+
+        for _length, values in rows:
+            self.tree_cuts.insert("", "end", values=values)
+
+    def _required_material_mm(self, items: List[CutItem]) -> Dict[str, float]:
+        required: Dict[str, float] = {}
+        for item in items:
+            required[item.material_id] = required.get(item.material_id, 0.0) + float(item.length_mm) * int(item.qty)
+        return required
+
+    def _available_material_mm(self) -> Dict[str, float]:
+        available: Dict[str, float] = {}
+        for bar in load_stock_bars():
+            available[bar.material_id] = available.get(bar.material_id, 0.0) + float(bar.length_mm) * int(bar.qty)
+        return available
+
+    def _warn_if_stock_shortage(self, items: List[CutItem]) -> bool:
+        """Prosta walidacja przed obliczeniem: długość wymagana vs dostępna.
+
+        To nie zastępuje optymalizatora, ale szybko łapie oczywiste braki.
+        """
+        required = self._required_material_mm(items)
+        available = self._available_material_mm()
+        shortages = []
+        ok_lines = []
+
+        for material_id, req_mm in sorted(required.items()):
+            av_mm = available.get(material_id, 0.0)
+            display = self._display_material(material_id)
+            if av_mm + 0.001 < req_mm:
+                shortages.append(f"- {display}: potrzeba {format_mm(req_mm)}, dostępne {format_mm(av_mm)}")
+            else:
+                ok_lines.append(f"- {display}: potrzeba {format_mm(req_mm)}, dostępne {format_mm(av_mm)}")
+
+        if not shortages:
+            return True
+
+        msg = (
+            "Wykryto możliwy brak materiału:\n\n"
+            + "\n".join(shortages)
+            + "\n\nTo jest kontrola orientacyjna. Optymalizator i tak może próbować liczyć.\n"
+            "Kontynuować obliczenie?"
+        )
+        return messagebox.askyesno("Brak materiału", msg)
+
     def _apply_tablet_mode(self) -> None:
         style = ttk.Style(self.winfo_toplevel())
         if self.var_tablet.get():
@@ -708,6 +803,9 @@ class CuttingFrame(ttk.Frame):
             self._validate_angles_or_warn(items)
         except Exception as exc:
             messagebox.showerror("Rozkrój", f"{exc}\n\nPiła obsługuje tylko kąty -60° do 60°.")
+            return
+
+        if not self._warn_if_stock_shortage(items):
             return
 
         stock = load_stock_bars()
@@ -998,6 +1096,13 @@ class CuttingFrame(ttk.Frame):
         for mat in sorted(by_mat):
             chunks.append(f"{mat}: {', '.join(by_len.get(mat, []))}")
         self.var_stock_info.set("STAN: " + " | ".join(chunks))
+
+    def _display_material(self, material_id: str) -> str:
+        """Czytelna nazwa surowca bez technicznego ID, jeśli istnieje w bazie."""
+        for row in getattr(self, "_materials", []):
+            if str(row.get("material_id", "")).strip() == str(material_id).strip():
+                return str(row.get("display_name") or row.get("nazwa") or material_id)
+        return str(material_id)
 
     def _delete_selected_cut(self) -> None:
         sel = self.tree_cuts.selection()
