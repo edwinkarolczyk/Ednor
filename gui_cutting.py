@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.3 - surowce v2
+# Wersja: 0.9.4 - transporty v1
 from __future__ import annotations
 
 import csv
@@ -29,6 +29,8 @@ from core.cutting_storage import (
     upsert_material,
     build_material_display_name,
     material_size_from_dims,
+    save_transport,
+    next_transport_id,
 )
 from core.cutting_units import (
     clamp_saw_angle,
@@ -288,6 +290,7 @@ class CuttingFrame(ttk.Frame):
         top.pack(fill="x", pady=(0, 6))
         ttk.Label(top, text="Baza surowców", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
         ttk.Button(top, text="+ Surowiec", command=self._add_material_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="+ TRANSPORT", command=self._add_transport_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 6))
         ttk.Button(top, text="+ DODAJ STAN", command=self._add_stock_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
         ttk.Button(top, text="+ DODAJ ODPAD", command=self._add_remnant_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_material, style="Cut.TButton").pack(side="right")
@@ -1029,6 +1032,21 @@ class CuttingFrame(ttk.Frame):
                 return
             self._refresh_materials()
             self._refresh_stock_info()
+
+    def _add_transport_dialog(self) -> None:
+        self._refresh_materials()
+        if not self._materials:
+            messagebox.showwarning("Transport", "Najpierw dodaj przynajmniej jeden surowiec.")
+            return
+        dialog = _TransportDialog(self)
+        self.wait_window(dialog.win)
+        if not dialog.result:
+            return
+        transport = save_transport(dialog.result)
+        self._refresh_materials()
+        self._refresh_stock_info()
+        self._refresh_stock_table_if_exists()
+        messagebox.showinfo("Transport", f"Zapisano transport:\n{transport.get('transport_id')}")
 
     def _read_cut_items(self) -> List[CutItem]:
         items: List[CutItem] = []
@@ -2051,3 +2069,25 @@ if __name__ == "__main__":
     frame = CuttingFrame(root)
     frame.pack(fill="both", expand=True)
     root.mainloop()
+
+
+class _TransportDialog:
+    def __init__(self, parent: CuttingFrame):
+        self.parent = parent
+        self.result = None
+        self.win = tk.Toplevel(parent)
+        self.win.title("Dodaj transport")
+        self.win.transient(parent.winfo_toplevel())
+        self.win.grab_set()
+        self.v_supplier = tk.StringVar(value="")
+        ttk.Label(self.win, text=f"Nr: {next_transport_id()}").pack(padx=10, pady=6)
+        ttk.Entry(self.win, textvariable=self.v_supplier).pack(padx=10, pady=6)
+        ttk.Button(self.win, text="Zapisz", command=self._ok).pack(padx=10, pady=10)
+
+    def _ok(self) -> None:
+        mats = self.parent._materials
+        if not mats:
+            return
+        m = mats[0]
+        self.result = {"supplier": self.v_supplier.get().strip(), "lines": [{"material_id": m.get("material_id"), "material_display": m.get("display_name", ""), "bar_length_mm": 6000, "qty": 1, "price_per_m": 0}]}
+        self.win.destroy()
