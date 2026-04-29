@@ -11,6 +11,7 @@ from core.cutting_models import CutItem
 from core.cutting_optimizer import optimize_cutting
 from core.cutting_storage import (
     accept_cutting_calculation,
+    add_remnant,
     add_stock_bar,
     get_cutting_debug_paths,
     list_cutting_calculations,
@@ -22,6 +23,7 @@ from core.cutting_storage import (
     save_cutting_calculation,
     save_cut_result,
     save_cut_job,
+    log_stock_move,
     update_cutting_setting,
     upsert_material,
 )
@@ -1030,7 +1032,25 @@ class CuttingFrame(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Rozkrój", f"Nie udało się zaakceptować kalkulacji:\n{exc}")
             return
-        messagebox.showinfo("Rozkrój", "Kalkulacja zaakceptowana. Stan surowców zmniejszony.")
+        min_offcut = float(self.var_min_offcut.get())
+        for bar in self._last_result_dict.get("bars_used", []):
+            if not isinstance(bar, dict):
+                continue
+            waste = float(bar.get("waste_mm", 0) or 0)
+            material = str(bar.get("material_id", "")).strip()
+            if not material or waste <= 0:
+                continue
+            if waste >= min_offcut:
+                add_remnant(material, waste)
+            else:
+                log_stock_move(
+                    {
+                        "type": "scrap",
+                        "material_id": material,
+                        "length_mm": waste,
+                    }
+                )
+        messagebox.showinfo("Rozkrój", "Zaktualizowano magazyn + odpady.")
         self._refresh_stock_info()
         self._refresh_materials()
         self._refresh_calculations()

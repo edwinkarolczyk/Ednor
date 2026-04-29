@@ -327,6 +327,43 @@ def add_stock_bar(
     return save_cutting_stock_raw(data)
 
 
+def log_stock_move(payload: Dict[str, Any]) -> str:
+    data = load_cutting_stock_raw()
+    moves = data.get("moves", [])
+    if not isinstance(moves, list):
+        moves = []
+    entry = dict(payload or {})
+    entry["at"] = _now_iso()
+    moves.append(entry)
+    data["moves"] = moves
+    return save_cutting_stock_raw(data)
+
+
+def add_remnant(material_id: str, length_mm: float, qty: int = 1) -> str:
+    data = load_cutting_stock_raw()
+    material_id = str(material_id).strip()
+    length_mm = float(length_mm or 0)
+    qty = int(qty or 0)
+    if not material_id:
+        raise ValueError("material_id jest wymagane")
+    if length_mm <= 0:
+        raise ValueError("długość odpadu musi być > 0")
+    if qty <= 0:
+        raise ValueError("ilość musi być > 0")
+    row_id = f"off_{material_id}_{int(length_mm)}_{int(time.time())}"
+    data["offs"].append(
+        {
+            "id": row_id,
+            "material_id": material_id,
+            "name": f"Offcut {material_id}",
+            "length_mm": length_mm,
+            "qty": qty,
+            "location": "odpad",
+        }
+    )
+    return save_cutting_stock_raw(data)
+
+
 def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
     """Akceptuje kalkulację: zmniejsza stan sztang w magazynie.
 
