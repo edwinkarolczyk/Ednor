@@ -33,6 +33,10 @@ def cutting_reports_dir() -> Path:
     return cutting_dir() / "reports"
 
 
+def cutting_settings_file() -> Path:
+    return cutting_dir() / "settings.json"
+
+
 def cutting_calculations_dir() -> Path:
     return cutting_dir() / "calculations"
 
@@ -62,6 +66,7 @@ def get_path(key: str) -> str:
     mapping = {
         "cutting.stock_bars_file": cutting_stock_bars_file(),
         "cutting.materials_file": cutting_materials_file(),
+        "cutting.settings_file": cutting_settings_file(),
         "cutting.jobs_dir": cutting_jobs_dir(),
         "cutting.reports_dir": cutting_reports_dir(),
         "cutting.calculations_dir": cutting_calculations_dir(),
