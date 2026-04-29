@@ -200,10 +200,13 @@ class CuttingFrame(ttk.Frame):
         self._material_label_to_id: Dict[str, str] = {}
         self._settings: Dict[str, Any] = load_cutting_settings()
         self.var_tablet = tk.BooleanVar(value=False)
+        self._resize_after_id = None
         self._build_ui()
         self._refresh_materials()
         self._refresh_calculations()
         self._refresh_stock_info()
+        self.master = master.winfo_toplevel()
+        self.master.bind("<Configure>", self._on_window_resize)
 
     def _build_ui(self) -> None:
         header = ttk.Frame(self, style="Cut.TFrame")
@@ -398,7 +401,7 @@ class CuttingFrame(ttk.Frame):
             height=14,
             style="Cut.Treeview",
         )
-        self.tree_cuts.pack(fill="both", expand=False)
+        self.tree_cuts.pack(fill="both", expand=True)
 
         labels = {
             "material": "Materiał ID",
@@ -508,6 +511,17 @@ class CuttingFrame(ttk.Frame):
             font=("Consolas", 10),
         )
         self.txt_summary.pack(fill="x", pady=(10, 0))
+
+    def _on_window_resize(self, _event=None) -> None:
+        """Opóźnione przerysowanie preview po zmianie rozmiaru okna."""
+        if self._resize_after_id:
+            self.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.after(120, self._redraw_preview)
+
+    def _redraw_preview(self) -> None:
+        self._resize_after_id = None
+        if self._last_result_dict:
+            self._draw_preview(self._last_result_dict)
 
     def _build_calculations(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
@@ -1044,6 +1058,7 @@ class CuttingFrame(ttk.Frame):
                 fill=GREEN if usage >= 80 else YELLOW,
                 font=("Segoe UI", 9, "bold"),
             )
+        self.canvas.bind("<Configure>", self._on_window_resize)
 
     def _draw_angle_mark(self, x: float, y0: float, y1: float, angle: float, left_side: bool) -> None:
         """Rysuje symbol cięcia na końcu segmentu.
