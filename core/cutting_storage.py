@@ -116,6 +116,34 @@ def _write_json(path: str, data: Any) -> str:
     return path
 
 
+def _num_clean(value: Any) -> str:
+    text = str(value or "").strip().replace(",", ".")
+    if not text:
+        return ""
+    try:
+        number = float(text)
+        return f"{number:g}"
+    except Exception:
+        return text
+
+
+def material_size_from_dims(typ: str, a: Any = "", b: Any = "", c: Any = "") -> str:
+    typ_norm = str(typ or "").strip().lower()
+    a_txt = _num_clean(a)
+    b_txt = _num_clean(b)
+    c_txt = _num_clean(c)
+
+    if typ_norm in ("profil", "profil zamknięty", "profil_zamkniety"):
+        return "x".join(part for part in (a_txt, b_txt, c_txt) if part)
+    if typ_norm == "rura":
+        return f"fi{a_txt}x{b_txt}" if b_txt else f"fi{a_txt}"
+    if typ_norm in ("pret", "pręt"):
+        return f"fi{a_txt}"
+    if typ_norm in ("plaskownik", "płaskownik"):
+        return "x".join(part for part in (a_txt, b_txt) if part)
+    return "x".join(part for part in (a_txt, b_txt, c_txt) if part)
+
+
 def _slugify_material(value: str) -> str:
     text = str(value or "").strip().lower()
     repl = {
@@ -145,8 +173,16 @@ def _title_material_type(typ: str) -> str:
         "pręt": "Pręt",
         "plaskownik": "Płaskownik",
         "płaskownik": "Płaskownik",
+        "profil zamknięty": "Profil",
+        "profil_zamkniety": "Profil",
     }
     return labels.get(typ, typ.capitalize() if typ else "Surowiec")
+
+
+def build_material_display_name(typ: str, rozmiar: str) -> str:
+    typ_label = _title_material_type(typ)
+    rozmiar = str(rozmiar or "").strip()
+    return f"{typ_label} {rozmiar}".strip()
 
 
 def _material_stock_qty(data: Dict[str, Any], material_id: str) -> int:
@@ -285,9 +321,18 @@ def upsert_material(payload: Dict[str, Any]) -> str:
     typ = str(payload.get("typ", "")).strip()
     nazwa = str(payload.get("nazwa") or payload.get("display_name") or "").strip()
     rozmiar = str(payload.get("rozmiar", "")).strip()
+    wymiary = payload.get("wymiary") if isinstance(payload.get("wymiary"), dict) else {}
+
+    if not rozmiar and wymiary:
+        rozmiar = material_size_from_dims(
+            typ,
+            wymiary.get("a", ""),
+            wymiary.get("b", ""),
+            wymiary.get("c", ""),
+        )
 
     if not nazwa:
-        nazwa = f"{_title_material_type(typ)} {rozmiar}".strip() if (typ or rozmiar) else "Surowiec"
+        nazwa = build_material_display_name(typ, rozmiar) if (typ or rozmiar) else "Surowiec"
 
     material_id = str(payload.get("material_id", "")).strip()
     if not material_id:
@@ -304,8 +349,8 @@ def upsert_material(payload: Dict[str, Any]) -> str:
         "aktywny": bool(payload.get("aktywny", True)),
         "uwagi": str(payload.get("uwagi", "")).strip(),
     }
-    if isinstance(payload.get("wymiary"), dict):
-        row["wymiary"] = payload["wymiary"]
+    if wymiary:
+        row["wymiary"] = wymiary
     if payload.get("cena_za_m") not in (None, ""):
         try:
             row["cena_za_m"] = float(payload.get("cena_za_m"))
