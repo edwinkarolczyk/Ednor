@@ -1004,8 +1004,13 @@ class CuttingFrame(ttk.Frame):
         dialog = _MaterialDialog(self)
         self.wait_window(dialog.win)
         if dialog.result:
-            upsert_material(dialog.result)
+            try:
+                upsert_material(dialog.result)
+            except Exception as exc:
+                messagebox.showerror("Surowiec", f"Nie udało się zapisać surowca:\n{exc}")
+                return
             self._refresh_materials()
+            self._refresh_stock_info()
 
     def _edit_selected_material(self) -> None:
         material_id = self._selected_material_id()
@@ -1015,8 +1020,13 @@ class CuttingFrame(ttk.Frame):
         dialog = _MaterialDialog(self, row)
         self.wait_window(dialog.win)
         if dialog.result:
-            upsert_material(dialog.result)
+            try:
+                upsert_material(dialog.result)
+            except Exception as exc:
+                messagebox.showerror("Surowiec", f"Nie udało się zapisać surowca:\n{exc}")
+                return
             self._refresh_materials()
+            self._refresh_stock_info()
 
     def _read_cut_items(self) -> List[CutItem]:
         items: List[CutItem] = []
