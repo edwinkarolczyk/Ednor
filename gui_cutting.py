@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.7.0
+# Wersja: 0.8.0
 from __future__ import annotations
 
 import csv
