@@ -53,8 +53,15 @@ def parse_length_to_mm(raw: str, default_unit: str = "mm") -> float:
     """
 
     text = str(raw or "").strip().lower().replace(",", ".")
+    if "(" in text:
+        text = text.split("(", 1)[0].strip()
     if not text:
         raise ValueError("pusta długość")
+
+    try:
+        return float(text)
+    except ValueError:
+        pass
 
     unit = default_unit.lower().strip() or "mm"
     for suffix in ("mm", "cm", "m"):
