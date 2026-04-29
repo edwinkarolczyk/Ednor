@@ -124,7 +124,7 @@ def _operator_cut_shape(angle_l: Any, angle_r: Any) -> str:
     Przykłady:
       0 / 0      -> |---|
       45 / -45   -> /---\
-      -45 / 45   -> \---/
+      -45 / 45   -> \\---/
       45 / 45    -> /---/
     """
 
@@ -1882,6 +1882,349 @@ class _MaterialDialog:
         self.win.destroy()
 
 
+class _TransportDialog:
+    def __init__(self, parent):
+        self.parent = parent
+        self.result = None
+        self.lines: List[Dict[str, Any]] = []
+
+        self.win = tk.Toplevel(parent)
+        self.win.title("Dodaj transport")
+        self.win.transient(parent.winfo_toplevel())
+        self.win.grab_set()
+        _apply_cutting_theme(self.win)
+
+        self.v_transport_id = tk.StringVar(value=next_transport_id())
+        self.v_supplier = tk.StringVar(value="")
+        self.v_transport_cost = tk.StringVar(value="0")
+        self.v_price_mode = tk.StringVar(value=str(parent._settings.get("price_mode", "netto") or "netto"))
+        self.v_vat = tk.StringVar(value=str(parent._settings.get("vat_percent", 23) or 23))
+
+        self._material_by_label: Dict[str, Dict[str, Any]] = {}
+        self._typ_values = sorted(
+            {
+                str(m.get("typ", "")).strip()
+                for m in parent._materials
+                if str(m.get("typ", "")).strip()
+            }
+        )
+
+        ttk.Label(
+            self.win,
+            text="Transport / przyjęcie materiału",
+            style="Cut.Title.TLabel",
+        ).grid(row=0, column=0, columnspan=4, padx=10, pady=(10, 12), sticky="w")
+
+        ttk.Label(self.win, text="Nr transportu", style="Cut.TLabel").grid(
+            row=1, column=0, padx=10, pady=6, sticky="w"
+        )
+        ttk.Entry(
+            self.win,
+            textvariable=self.v_transport_id,
+            width=18,
+            style="Cut.TEntry",
+            state="readonly",
+        ).grid(row=1, column=1, padx=10, pady=6, sticky="w")
+
+        ttk.Label(self.win, text="Firma / dostawca", style="Cut.TLabel").grid(
+            row=1, column=2, padx=10, pady=6, sticky="w"
+        )
+        ttk.Entry(self.win, textvariable=self.v_supplier, width=28, style="Cut.TEntry").grid(
+            row=1, column=3, padx=10, pady=6, sticky="ew"
+        )
+
+        ttk.Label(self.win, text="Koszt transportu [zł]", style="Cut.TLabel").grid(
+            row=2, column=0, padx=10, pady=6, sticky="w"
+        )
+        ttk.Entry(
+            self.win,
+            textvariable=self.v_transport_cost,
+            width=18,
+            style="Cut.TEntry",
+        ).grid(row=2, column=1, padx=10, pady=6, sticky="w")
+
+        ttk.Label(self.win, text="Ceny", style="Cut.TLabel").grid(
+            row=2, column=2, padx=10, pady=6, sticky="w"
+        )
+        ttk.Combobox(
+            self.win,
+            textvariable=self.v_price_mode,
+            values=("netto", "brutto"),
+            width=10,
+            state="readonly",
+        ).grid(row=2, column=3, padx=10, pady=6, sticky="w")
+
+        ttk.Label(self.win, text="VAT [%]", style="Cut.TLabel").grid(
+            row=3, column=0, padx=10, pady=6, sticky="w"
+        )
+        ttk.Entry(self.win, textvariable=self.v_vat, width=18, style="Cut.TEntry").grid(
+            row=3, column=1, padx=10, pady=6, sticky="w"
+        )
+
+        add_box = ttk.Frame(self.win, style="Cut.Panel.TFrame")
+        add_box.grid(row=4, column=0, columnspan=4, padx=10, pady=(12, 8), sticky="ew")
+
+        self.v_typ = tk.StringVar(value=self._typ_values[0] if self._typ_values else "")
+        self.v_material = tk.StringVar(value="")
+        self.v_length = tk.StringVar(value="6000")
+        self.v_qty = tk.StringVar(value="1")
+        self.v_price = tk.StringVar(value="0")
+        self.v_preview = tk.StringVar(value="")
+
+        ttk.Label(add_box, text="Rodzaj", style="Cut.TLabel").grid(
+            row=0, column=0, padx=8, pady=6, sticky="w"
+        )
+        self.cbo_typ = ttk.Combobox(
+            add_box,
+            textvariable=self.v_typ,
+            values=self._typ_values,
+            width=14,
+            state="readonly",
+        )
+        self.cbo_typ.grid(row=0, column=1, padx=8, pady=6, sticky="w")
+
+        ttk.Label(add_box, text="Wymiar / surowiec", style="Cut.TLabel").grid(
+            row=0, column=2, padx=8, pady=6, sticky="w"
+        )
+        self.cbo_material = ttk.Combobox(
+            add_box,
+            textvariable=self.v_material,
+            values=(),
+            width=34,
+            state="readonly",
+        )
+        self.cbo_material.grid(row=0, column=3, padx=8, pady=6, sticky="ew")
+
+        ttk.Label(add_box, text="Długość lagi [mm]", style="Cut.TLabel").grid(
+            row=1, column=0, padx=8, pady=6, sticky="w"
+        )
+        ttk.Entry(add_box, textvariable=self.v_length, width=14, style="Cut.TEntry").grid(
+            row=1, column=1, padx=8, pady=6, sticky="w"
+        )
+
+        ttk.Label(add_box, text="Ilość lag", style="Cut.TLabel").grid(
+            row=1, column=2, padx=8, pady=6, sticky="w"
+        )
+        ttk.Entry(add_box, textvariable=self.v_qty, width=10, style="Cut.TEntry").grid(
+            row=1, column=3, padx=8, pady=6, sticky="w"
+        )
+
+        ttk.Label(add_box, text="Cena za metr", style="Cut.TLabel").grid(
+            row=2, column=0, padx=8, pady=6, sticky="w"
+        )
+        ttk.Entry(add_box, textvariable=self.v_price, width=14, style="Cut.TEntry").grid(
+            row=2, column=1, padx=8, pady=6, sticky="w"
+        )
+        ttk.Label(add_box, textvariable=self.v_preview, style="Cut.Muted.TLabel").grid(
+            row=2, column=2, columnspan=2, padx=8, pady=6, sticky="w"
+        )
+
+        ttk.Button(
+            add_box,
+            text="+ Dodaj pozycję",
+            command=self._add_line,
+            style="Cut.Red.TButton",
+        ).grid(row=3, column=0, columnspan=2, padx=8, pady=(8, 10), sticky="w")
+        ttk.Button(
+            add_box,
+            text="Usuń pozycję",
+            command=self._delete_selected_line,
+            style="Cut.TButton",
+        ).grid(row=3, column=2, padx=8, pady=(8, 10), sticky="w")
+
+        self.tree = ttk.Treeview(
+            self.win,
+            columns=("material", "length", "qty", "total", "price", "value"),
+            show="headings",
+            height=9,
+            style="Cut.Treeview",
+        )
+        self.tree.grid(row=5, column=0, columnspan=4, padx=10, pady=8, sticky="nsew")
+
+        labels = {
+            "material": "Surowiec",
+            "length": "Laga",
+            "qty": "Ilość",
+            "total": "Razem",
+            "price": "Cena/mb",
+            "value": "Wartość",
+        }
+        widths = {
+            "material": 220,
+            "length": 95,
+            "qty": 70,
+            "total": 110,
+            "price": 90,
+            "value": 100,
+        }
+        for col in ("material", "length", "qty", "total", "price", "value"):
+            self.tree.heading(col, text=labels[col])
+            self.tree.column(col, width=widths[col], anchor="w")
+
+        self.v_summary = tk.StringVar(value="Razem: 0 mb | netto 0 zł | brutto 0 zł")
+        ttk.Label(self.win, textvariable=self.v_summary, style="Cut.Title.TLabel").grid(
+            row=6, column=0, columnspan=4, padx=10, pady=(6, 10), sticky="w"
+        )
+
+        buttons = ttk.Frame(self.win, style="Cut.TFrame")
+        buttons.grid(row=7, column=0, columnspan=4, pady=(8, 12))
+        ttk.Button(
+            buttons,
+            text="ZAPISZ TRANSPORT",
+            command=self._ok,
+            style="Cut.Red.TButton",
+        ).pack(side="left", padx=5)
+        ttk.Button(buttons, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(
+            side="left", padx=5
+        )
+
+        self.cbo_typ.bind("<<ComboboxSelected>>", lambda _e: self._refresh_material_options())
+        for var in (self.v_length, self.v_qty, self.v_price):
+            var.trace_add("write", lambda *_: self._update_line_preview())
+
+        self._refresh_material_options()
+        self._update_line_preview()
+        self.win.columnconfigure(3, weight=1)
+        self.win.rowconfigure(5, weight=1)
+
+    def _refresh_material_options(self) -> None:
+        typ = self.v_typ.get().strip()
+        labels: List[str] = []
+        self._material_by_label = {}
+        for m in self.parent._materials:
+            if str(m.get("typ", "")).strip() != typ:
+                continue
+            label = str(m.get("display_name") or m.get("nazwa") or m.get("material_id"))
+            labels.append(label)
+            self._material_by_label[label] = m
+        self.cbo_material.configure(values=labels)
+        self.v_material.set(labels[0] if labels else "")
+        self._update_line_preview()
+
+    def _numbers(self) -> tuple[float, int, float]:
+        length = parse_length_to_mm(self.v_length.get())
+        qty = int(self.v_qty.get() or 0)
+        price = float(str(self.v_price.get() or "0").replace(",", "."))
+        return length, qty, price
+
+    def _update_line_preview(self) -> None:
+        try:
+            length, qty, price = self._numbers()
+            total_mm = length * qty
+            total_m = total_mm / 1000.0
+            value = total_m * price
+            self.v_preview.set(f"{length:g} mm × {qty} = {total_mm:g} mm ({total_m:g} mb) | {value:.2f} zł")
+        except Exception:
+            self.v_preview.set("")
+
+    def _line_totals_for_display(self, total_m: float, price: float) -> tuple[float, float]:
+        mode = self.v_price_mode.get().strip().lower()
+        try:
+            vat = float(str(self.v_vat.get() or "0").replace(",", "."))
+        except Exception:
+            vat = 0.0
+        value = round(total_m * price, 2)
+        if mode == "brutto":
+            gross = value
+            net = round(value / (1.0 + vat / 100.0), 2) if vat else value
+        else:
+            net = value
+            gross = round(value * (1.0 + vat / 100.0), 2)
+        return net, gross
+
+    def _add_line(self) -> None:
+        material_label_txt = self.v_material.get().strip()
+        material = self._material_by_label.get(material_label_txt)
+        if not material:
+            messagebox.showwarning("Transport", "Wybierz surowiec z listy.")
+            return
+        try:
+            length, qty, price = self._numbers()
+            if length <= 0:
+                raise ValueError("Długość lagi musi być > 0.")
+            if qty <= 0:
+                raise ValueError("Ilość lag musi być > 0.")
+            if price < 0:
+                raise ValueError("Cena za metr nie może być ujemna.")
+        except Exception as exc:
+            messagebox.showerror("Transport", str(exc))
+            return
+
+        total_mm = length * qty
+        total_m = total_mm / 1000.0
+        net, gross = self._line_totals_for_display(total_m, price)
+        line = {
+            "material_id": material.get("material_id"),
+            "material_display": material_label_txt,
+            "bar_length_mm": length,
+            "qty": qty,
+            "price_per_m": price,
+            "total_length_mm": total_mm,
+            "total_length_m": total_m,
+            "line_total_net": net,
+            "line_total_gross": gross,
+        }
+        self.lines.append(line)
+        self.tree.insert(
+            "",
+            "end",
+            values=(
+                material_label_txt,
+                f"{length:g} mm",
+                str(qty),
+                f"{total_m:g} mb",
+                f"{price:.2f}",
+                f"{net:.2f} / {gross:.2f}",
+            ),
+        )
+        self._refresh_summary()
+
+    def _delete_selected_line(self) -> None:
+        sel = self.tree.selection()
+        if not sel:
+            return
+        all_iids = list(self.tree.get_children())
+        idx = all_iids.index(sel[0])
+        self.tree.delete(sel[0])
+        if 0 <= idx < len(self.lines):
+            self.lines.pop(idx)
+        self._refresh_summary()
+
+    def _refresh_summary(self) -> None:
+        total_m = sum(float(line.get("total_length_m", 0) or 0) for line in self.lines)
+        net = sum(float(line.get("line_total_net", 0) or 0) for line in self.lines)
+        gross = sum(float(line.get("line_total_gross", 0) or 0) for line in self.lines)
+        try:
+            transport_cost = float(str(self.v_transport_cost.get() or "0").replace(",", "."))
+        except Exception:
+            transport_cost = 0.0
+        self.v_summary.set(
+            f"Razem: {total_m:g} mb | netto {net:.2f} zł | brutto {gross:.2f} zł | transport {transport_cost:.2f} zł"
+        )
+
+    def _ok(self) -> None:
+        if not self.lines:
+            messagebox.showwarning("Transport", "Dodaj przynajmniej jedną pozycję transportu.")
+            return
+        try:
+            transport_cost = float(str(self.v_transport_cost.get() or "0").replace(",", "."))
+            vat = float(str(self.v_vat.get() or "23").replace(",", "."))
+        except Exception:
+            messagebox.showerror("Transport", "Koszt transportu i VAT muszą być liczbami.")
+            return
+
+        self.result = {
+            "supplier": self.v_supplier.get().strip(),
+            "transport_cost": transport_cost,
+            "price_mode": self.v_price_mode.get().strip().lower() or "netto",
+            "vat_percent": vat,
+            "lines": list(self.lines),
+        }
+        update_cutting_setting("price_mode", self.result["price_mode"])
+        update_cutting_setting("vat_percent", vat)
+        self.win.destroy()
+
+
 class _CutRowDialog:
     def __init__(self, parent, row: Optional[Dict[str, Any]] = None):
         row = row or {}
@@ -2069,25 +2412,3 @@ if __name__ == "__main__":
     frame = CuttingFrame(root)
     frame.pack(fill="both", expand=True)
     root.mainloop()
-
-
-class _TransportDialog:
-    def __init__(self, parent: CuttingFrame):
-        self.parent = parent
-        self.result = None
-        self.win = tk.Toplevel(parent)
-        self.win.title("Dodaj transport")
-        self.win.transient(parent.winfo_toplevel())
-        self.win.grab_set()
-        self.v_supplier = tk.StringVar(value="")
-        ttk.Label(self.win, text=f"Nr: {next_transport_id()}").pack(padx=10, pady=6)
-        ttk.Entry(self.win, textvariable=self.v_supplier).pack(padx=10, pady=6)
-        ttk.Button(self.win, text="Zapisz", command=self._ok).pack(padx=10, pady=10)
-
-    def _ok(self) -> None:
-        mats = self.parent._materials
-        if not mats:
-            return
-        m = mats[0]
-        self.result = {"supplier": self.v_supplier.get().strip(), "lines": [{"material_id": m.get("material_id"), "material_display": m.get("display_name", ""), "bar_length_mm": 6000, "qty": 1, "price_per_m": 0}]}
-        self.win.destroy()
