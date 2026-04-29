@@ -73,6 +73,11 @@ GRID = "#303038"
 GREEN = "#37B36B"
 YELLOW = "#E0B84D"
 
+DEFAULT_KERF_MM = 2.5
+DEFAULT_MIN_OFFCUT_MM = 300
+DEFAULT_STRATEGY = "balanced"
+DEFAULT_JOB_ID = "ROZKROJ"
+
 
 def _fmt_num(value: Any) -> str:
     try:
@@ -192,7 +197,7 @@ class CuttingFrame(ttk.Frame):
         self._last_result = None
         self._last_result_dict: Optional[Dict[str, Any]] = None
         self._materials: List[Dict[str, Any]] = []
-        self._material_labels: Dict[str, str] = {}
+        self._material_label_to_id: Dict[str, str] = {}
         self._settings: Dict[str, Any] = load_cutting_settings()
         self.var_tablet = tk.BooleanVar(value=False)
         self._build_ui()
@@ -209,20 +214,20 @@ class CuttingFrame(ttk.Frame):
         ttk.Label(title_box, text=f"{APP_NAME.upper()} — {APP_SUBTITLE}", style="Cut.Title.TLabel").pack(anchor="w")
         ttk.Label(title_box, text="Rozkrój / cięcie", style="Cut.Muted.TLabel").pack(anchor="w")
 
-        ttk.Label(header, text="Zlecenie:", style="Cut.TLabel").pack(side="left")
-        self.var_job = tk.StringVar(value="ROZKROJ-TEST")
+        ttk.Label(header, text="Zlecenie:", style="Cut.TLabel").pack(side="left", padx=(20, 5))
+        self.var_job = tk.StringVar(value=DEFAULT_JOB_ID)
         ttk.Entry(header, textvariable=self.var_job, width=24, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
         ttk.Label(header, text="Rzaz [mm]:", style="Cut.TLabel").pack(side="left")
-        self.var_kerf = tk.StringVar(value="2.5")
+        self.var_kerf = tk.StringVar(value=f"{DEFAULT_KERF_MM:g}")
         ttk.Entry(header, textvariable=self.var_kerf, width=8, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
         ttk.Label(header, text="Min. odpad [mm]:", style="Cut.TLabel").pack(side="left")
-        self.var_min_offcut = tk.StringVar(value="300")
+        self.var_min_offcut = tk.StringVar(value=f"{DEFAULT_MIN_OFFCUT_MM:g}")
         ttk.Entry(header, textvariable=self.var_min_offcut, width=9, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
         ttk.Label(header, text="Strategia:", style="Cut.TLabel").pack(side="left")
-        self.var_strategy = tk.StringVar(value=STRATEGY_LABELS["balanced"])
+        self.var_strategy = tk.StringVar(value=STRATEGY_LABELS[DEFAULT_STRATEGY])
         self.cbo_strategy = ttk.Combobox(
             header,
             textvariable=self.var_strategy,
@@ -283,21 +288,14 @@ class CuttingFrame(ttk.Frame):
         self.tree_materials.bind("<Double-1>", lambda _e: self._edit_selected_material())
 
     def _refresh_materials(self) -> None:
-        self._materials = [m for m in load_materials() if m.get("aktywny", True)]
-        self._material_labels = {material_label(m): m["material_id"] for m in self._materials}
+        self._materials = [m for m in load_materials() if bool(m.get("aktywny", True))]
+        self._material_label_to_id = {material_label(m): m["material_id"] for m in self._materials}
         if hasattr(self, "tree_materials"):
             for iid in self.tree_materials.get_children():
                 self.tree_materials.delete(iid)
             for m in self._materials:
-                name = str(m.get("display_name") or m.get("nazwa") or "")
-                stock_mb = float(m.get("stock_mb", 0) or 0)
-                label = f"{name} (stan {stock_mb:g} mb)"
-                self.tree_materials.insert(
-                    "",
-                    "end",
-                    iid=m.get("material_id"),
-                    values=(label,),
-                )
+                display_label = material_label(m)
+                self.tree_materials.insert("", "end", iid=m["material_id"], values=(display_label,))
 
 
     def _add_stock_dialog(self):
@@ -309,20 +307,24 @@ class CuttingFrame(ttk.Frame):
         material_id = sel[0]
 
         val = simpledialog.askstring(
-            "Dodaj stan",
-            "Podaj długość (np. 12000mm lub 12m):",
+            "Dodaj stan magazynowy",
+            "Długość sztangi (np. 6000mm lub 6m)\nIlość po spacji (opcjonalnie):",
+            initialvalue="6000",
         )
         if not val:
             return
 
         try:
-            mm = parse_length_to_mm(val)
-            add_stock_bar(material_id, "bar", mm, 1)
+            parts = str(val).strip().split()
+            length_mm = parse_length_to_mm(parts[0])
+            qty = int(parts[1]) if len(parts) > 1 else 1
+            add_stock_bar(material_id=material_id, length_mm=length_mm, qty=qty)
         except Exception as e:
             messagebox.showerror("Błąd", str(e))
             return
 
         self._refresh_materials()
+        self._refresh_stock_info()
 
     def _add_remnant_dialog(self):
         sel = self.tree_materials.selection()
@@ -333,20 +335,22 @@ class CuttingFrame(ttk.Frame):
         material_id = sel[0]
 
         val = simpledialog.askstring(
-            "Dodaj odpad",
-            "Podaj długość odpadu (np. 1200mm):",
+            "Dodaj odpad użytkowy",
+            "Długość odpadu (np. 1200mm lub 1.2m):",
+            initialvalue="1200",
         )
         if not val:
             return
 
         try:
             mm = parse_length_to_mm(val)
-            add_remnant(material_id, mm, 1)
+            add_remnant(material_id, mm, qty=1)
         except Exception as e:
             messagebox.showerror("Błąd", str(e))
             return
 
         self._refresh_materials()
+        self._refresh_stock_info()
 
     def _build_cut_list(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
@@ -356,6 +360,7 @@ class CuttingFrame(ttk.Frame):
         ttk.Button(top, text="+ DODAJ ELEMENT DO CIĘCIA", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
+        ttk.Button(top, text="Wyczyść listę", command=self._clear_cuts, style="Cut.TButton").pack(side="right", padx=(0, 12))
         ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
 
         tools = ttk.Frame(parent, style="Cut.TFrame")
@@ -637,9 +642,8 @@ class CuttingFrame(ttk.Frame):
 
     def _selected_material_id(self) -> str:
         sel = getattr(self, "tree_materials", None).selection() if hasattr(self, "tree_materials") else []
-        if sel:
-            values = self.tree_materials.item(sel[0], "values")
-            return str(values[0]).strip()
+        if sel and hasattr(self, "_material_label_to_id"):
+            return sel[0]
         last_mid = str(self._settings.get("last_material_id", "")).strip()
         if last_mid:
             return last_mid
@@ -724,7 +728,7 @@ class CuttingFrame(ttk.Frame):
 
         strategy_key = strategy_label_to_key(self.var_strategy.get())
         result = optimize_cutting(
-            job_id=self.var_job.get().strip() or "ROZKROJ",
+            job_id=self.var_job.get().strip() or DEFAULT_JOB_ID,
             items=items,
             stock_bars=stock,
             saw_kerf_mm=saw_kerf,
@@ -739,7 +743,7 @@ class CuttingFrame(ttk.Frame):
         self._last_result_dict["calculation_id"] = calc_id
 
         payload = {
-            "job_id": self.var_job.get().strip() or "ROZKROJ",
+            "job_id": self.var_job.get().strip() or DEFAULT_JOB_ID,
             "saw_kerf_mm": saw_kerf,
             "min_reusable_offcut_mm": min_offcut,
             "strategy": strategy_key,
@@ -1000,6 +1004,14 @@ class CuttingFrame(ttk.Frame):
         if not sel:
             return
         self.tree_cuts.delete(sel[0])
+
+    def _clear_cuts(self) -> None:
+        if not self.tree_cuts.get_children():
+            return
+        if messagebox.askyesno("Wyczyść listę", "Na pewno wyczyścić całą listę cięć?"):
+            for iid in self.tree_cuts.get_children():
+                self.tree_cuts.delete(iid)
+            messagebox.showinfo("Wyczyść listę", "Lista cięć została wyczyszczona.")
 
     def _duplicate_selected_cut(self) -> None:
         sel = self.tree_cuts.selection()
@@ -1360,7 +1372,7 @@ class _CutRowDialog:
         material_values = []
         if hasattr(parent, "_materials"):
             material_values = [material_label(m) for m in parent._materials]
-        self._label_to_id = {material_label(m): m["material_id"] for m in getattr(parent, "_materials", [])}
+        self._label_to_id = parent._material_label_to_id if hasattr(parent, "_material_label_to_id") else {}
 
         ttk.Label(self.win, text="Materiał", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
         self.cbo_material = ttk.Combobox(self.win, textvariable=self.v_material, values=material_values, width=42)
