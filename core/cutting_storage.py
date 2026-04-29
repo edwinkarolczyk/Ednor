@@ -384,6 +384,33 @@ def upsert_material(payload: Dict[str, Any]) -> str:
     return save_materials_raw(data)
 
 
+def deactivate_material(material_id: str) -> str:
+    """Ukrywa surowiec z listy bez kasowania historii.
+
+    Nie usuwamy fizycznie materiału, bo może być użyty w:
+    - transportach,
+    - historii magazynu,
+    - wcześniejszych kalkulacjach.
+    """
+
+    material_id = str(material_id or "").strip()
+    if not material_id:
+        raise ValueError("material_id jest wymagane")
+
+    data = load_materials_raw()
+    found = False
+    for row in data.get("materials", []):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("material_id", "")).strip() == material_id:
+            row["aktywny"] = False
+            found = True
+            break
+    if not found:
+        raise ValueError("Nie znaleziono surowca")
+    return save_materials_raw(data)
+
+
 def load_stock_bars() -> List[StockBar]:
     data = load_cutting_stock_raw()
     bars: List[StockBar] = []
