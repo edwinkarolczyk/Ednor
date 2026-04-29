@@ -1,9 +1,10 @@
 # Plik: gui_cutting.py
-# Wersja: 0.3.0
+# Wersja: 0.6.0
 from __future__ import annotations
 
+import csv
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any, Dict, List, Optional
 
 from core.cutting_models import CutItem
@@ -14,12 +15,14 @@ from core.cutting_storage import (
     get_cutting_debug_paths,
     list_cutting_calculations,
     load_cutting_calculation,
+    load_cutting_settings,
     load_materials,
     material_label,
     load_stock_bars,
     save_cutting_calculation,
     save_cut_result,
     save_cut_job,
+    update_cutting_setting,
     upsert_material,
 )
 from core.cutting_units import (
@@ -162,6 +165,7 @@ class CuttingFrame(ttk.Frame):
         self._last_result_dict: Optional[Dict[str, Any]] = None
         self._materials: List[Dict[str, Any]] = []
         self._material_labels: Dict[str, str] = {}
+        self._settings: Dict[str, Any] = load_cutting_settings()
         self._build_ui()
         self._refresh_materials()
         self._refresh_calculations()
@@ -270,7 +274,18 @@ class CuttingFrame(ttk.Frame):
 
         ttk.Button(top, text="+ Dodaj", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
+        ttk.Button(top, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
+
+        tools = ttk.Frame(parent, style="Cut.TFrame")
+        tools.pack(fill="x", pady=(0, 6))
+        ttk.Button(tools, text="Import CSV", command=self._import_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
+        ttk.Button(tools, text="Eksport CSV", command=self._export_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
+        ttk.Label(
+            tools,
+            text="CSV kolumny: material_id,length_mm,angle_left,angle_right,qty,label",
+            style="Cut.Muted.TLabel",
+        ).pack(side="left", padx=(8, 0))
 
         self.tree_cuts = ttk.Treeview(
             parent,
@@ -361,6 +376,9 @@ class CuttingFrame(ttk.Frame):
         for col in RESULT_COLUMNS:
             self.tree_result.heading(col, text=labels[col])
             self.tree_result.column(col, width=widths[col], anchor="w")
+        self.tree_result.tag_configure("usage_good", foreground=GREEN)
+        self.tree_result.tag_configure("usage_mid", foreground=YELLOW)
+        self.tree_result.tag_configure("usage_bad", foreground=RED_HOT)
 
         preview_box = ttk.Frame(parent, style="Cut.Panel.TFrame")
         preview_box.pack(fill="both", expand=True, pady=(10, 0))
@@ -493,12 +511,24 @@ class CuttingFrame(ttk.Frame):
                 label,
             ),
         )
+        if material_id:
+            self._remember_last_material(material_id)
+
+    def _remember_last_material(self, material_id: str) -> None:
+        material_id = str(material_id or "").strip()
+        if not material_id:
+            return
+        self._settings["last_material_id"] = material_id
+        update_cutting_setting("last_material_id", material_id)
 
     def _selected_material_id(self) -> str:
         sel = getattr(self, "tree_materials", None).selection() if hasattr(self, "tree_materials") else []
         if sel:
             values = self.tree_materials.item(sel[0], "values")
             return str(values[0]).strip()
+        last_mid = str(self._settings.get("last_material_id", "")).strip()
+        if last_mid:
+            return last_mid
         return self._materials[0]["material_id"] if self._materials else ""
 
     def _get_material_row(self, material_id: str) -> Optional[Dict[str, Any]]:
@@ -609,11 +639,19 @@ class CuttingFrame(ttk.Frame):
         for iid in self.tree_result.get_children():
             self.tree_result.delete(iid)
 
+        def _usage_tag(value: float) -> str:
+            if value >= 85:
+                return "usage_good"
+            if value >= 70:
+                return "usage_mid"
+            return "usage_bad"
+
         for idx, bar in enumerate(data.get("bars_used", []), start=1):
             cuts_txt = self._bar_cuts_text(bar)
             used = float(bar.get("used_mm", 0) or 0)
             length = float(bar.get("bar_length_mm", 0) or 0)
-            usage = f"{(used / length * 100):.1f}%" if length else "-"
+            usage_val = (used / length * 100) if length else 0.0
+            usage = f"{usage_val:.1f}%" if length else "-"
             self.tree_result.insert(
                 "",
                 "end",
@@ -624,6 +662,7 @@ class CuttingFrame(ttk.Frame):
                     format_mm(float(bar.get("waste_mm", 0) or 0)),
                     usage,
                 ),
+                tags=(_usage_tag(usage_val),),
             )
 
         self._draw_preview(data)
@@ -839,6 +878,91 @@ class CuttingFrame(ttk.Frame):
             return
         self.tree_cuts.delete(sel[0])
 
+    def _duplicate_selected_cut(self) -> None:
+        sel = self.tree_cuts.selection()
+        if not sel:
+            messagebox.showinfo("Rozkrój", "Zaznacz pozycję do zduplikowania.")
+            return
+        values = list(self.tree_cuts.item(sel[0], "values"))
+        if not values:
+            return
+        self.tree_cuts.insert("", "end", values=values)
+        self._remember_last_material(str(values[0]))
+
+    def _cut_rows_for_csv(self) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for iid in self.tree_cuts.get_children():
+            values = self.tree_cuts.item(iid, "values")
+            if not values:
+                continue
+            try:
+                rows.append(
+                    {
+                        "material_id": str(values[0]).strip(),
+                        "length_mm": f"{parse_length_to_mm(str(values[1])):g}",
+                        "angle_left": str(values[2]),
+                        "angle_right": str(values[3]),
+                        "qty": str(values[4]),
+                        "label": str(values[5]) if len(values) > 5 else "",
+                    }
+                )
+            except Exception:
+                continue
+        return rows
+
+    def _import_cuts_csv(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Import listy cięć CSV",
+            filetypes=[("CSV", "*.csv"), ("Wszystkie pliki", "*.*")],
+        )
+        if not path:
+            return
+        imported = 0
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    material_id = str(row.get("material_id") or row.get("material") or "").strip()
+                    length_raw = row.get("length_mm") or row.get("length") or row.get("dlugosc") or ""
+                    angle_l = row.get("angle_left") or row.get("angle_l") or row.get("kat_l") or 0
+                    angle_r = row.get("angle_right") or row.get("angle_r") or row.get("kat_p") or 0
+                    qty = row.get("qty") or row.get("ilosc") or 1
+                    label = row.get("label") or row.get("opis") or ""
+                    length_mm = parse_length_to_mm(str(length_raw))
+                    a_l = validate_saw_angle(float(str(angle_l).replace(",", ".")))
+                    a_r = validate_saw_angle(float(str(angle_r).replace(",", ".")))
+                    self._insert_cut_row(material_id, length_mm, a_l, a_r, int(qty), str(label))
+                    imported += 1
+        except Exception as exc:
+            messagebox.showerror("Import CSV", f"Nie udało się zaimportować CSV:\n{exc}")
+            return
+        messagebox.showinfo("Import CSV", f"Zaimportowano pozycji: {imported}")
+
+    def _export_cuts_csv(self) -> None:
+        rows = self._cut_rows_for_csv()
+        if not rows:
+            messagebox.showinfo("Eksport CSV", "Brak pozycji do eksportu.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Eksport listy cięć CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=["material_id", "length_mm", "angle_left", "angle_right", "qty", "label"],
+                )
+                writer.writeheader()
+                writer.writerows(rows)
+        except Exception as exc:
+            messagebox.showerror("Eksport CSV", f"Nie udało się zapisać CSV:\n{exc}")
+            return
+        messagebox.showinfo("Eksport CSV", f"Zapisano:\n{path}")
+
     def _edit_selected_cut(self) -> None:
         sel = self.tree_cuts.selection()
         if not sel:
@@ -866,6 +990,7 @@ class CuttingFrame(ttk.Frame):
                     dialog.result["label"],
                 ),
             )
+            self._remember_last_material(dialog.result["material_id"])
 
     def _add_cut_row_dialog(self) -> None:
         dialog = _CutRowDialog(self, {"material_id": self._selected_material_id()})

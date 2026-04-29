@@ -1,5 +1,5 @@
 # Plik: core/cutting_storage.py
-# Wersja: 0.4.0
+# Wersja: 0.5.0
 from __future__ import annotations
 
 import json
@@ -15,6 +15,7 @@ from core.ednor_paths import (
     cutting_jobs_dir,
     cutting_materials_file,
     cutting_reports_dir,
+    cutting_settings_file,
     cutting_stock_bars_file,
     ensure_data_tree,
 )
@@ -165,6 +166,26 @@ def save_cutting_stock_raw(data: Dict[str, Any]) -> str:
     data.setdefault("bars", [])
     data.setdefault("offs", [])
     return _write_json(get_cutting_stock_path(), data)
+
+
+def load_cutting_settings() -> Dict[str, Any]:
+    ensure_data_tree()
+    path = cutting_settings_file()
+    data = _read_json(str(path), {})
+    return data if isinstance(data, dict) else {}
+
+
+def save_cutting_settings(data: Dict[str, Any]) -> str:
+    ensure_data_tree()
+    if not isinstance(data, dict):
+        data = {}
+    return _write_json(str(cutting_settings_file()), data)
+
+
+def update_cutting_setting(key: str, value: Any) -> str:
+    data = load_cutting_settings()
+    data[str(key)] = value
+    return save_cutting_settings(data)
 
 
 def get_cutting_materials_path() -> str:
@@ -450,6 +471,7 @@ def get_cutting_debug_paths() -> Dict[str, str]:
     return {
         "stock_bars": str(Path(get_cutting_stock_path())),
         "materials": str(Path(get_cutting_materials_path())),
+        "settings": str(cutting_settings_file()),
         "jobs_dir": str(Path(get_cutting_jobs_dir())),
         "reports_dir": str(Path(get_cutting_reports_dir())),
         "calculations_dir": str(cutting_calculations_dir()),
