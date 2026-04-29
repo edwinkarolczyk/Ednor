@@ -42,6 +42,14 @@ STRATEGY_LABELS = {
     "min_cuts": "Najmniej cięć",
 }
 
+STRATEGY_BY_LABEL = {label: key for key, label in STRATEGY_LABELS.items()}
+
+
+def strategy_label_to_key(value: str) -> str:
+    value = str(value or "").strip()
+    return STRATEGY_BY_LABEL.get(value, value if value in STRATEGY_LABELS else "balanced")
+
+
 MAT_COLUMNS = ("material_id", "typ", "nazwa", "rozmiar", "stock", "length")
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
 RESULT_COLUMNS = ("bar", "source", "cuts", "waste", "usage")
@@ -200,12 +208,12 @@ class CuttingFrame(ttk.Frame):
         ttk.Entry(header, textvariable=self.var_min_offcut, width=9, style="Cut.TEntry").pack(side="left", padx=(5, 14))
 
         ttk.Label(header, text="Strategia:", style="Cut.TLabel").pack(side="left")
-        self.var_strategy = tk.StringVar(value="balanced")
+        self.var_strategy = tk.StringVar(value=STRATEGY_LABELS["balanced"])
         self.cbo_strategy = ttk.Combobox(
             header,
             textvariable=self.var_strategy,
-            values=list(STRATEGY_LABELS.keys()),
-            width=14,
+            values=list(STRATEGY_LABELS.values()),
+            width=22,
             state="readonly",
         )
         self.cbo_strategy.pack(side="left", padx=(5, 14))
@@ -641,13 +649,14 @@ class CuttingFrame(ttk.Frame):
             messagebox.showerror("Rozkrój", "Rzaz i minimalny odpad muszą być liczbami.")
             return
 
+        strategy_key = strategy_label_to_key(self.var_strategy.get())
         result = optimize_cutting(
             job_id=self.var_job.get().strip() or "ROZKROJ",
             items=items,
             stock_bars=stock,
             saw_kerf_mm=saw_kerf,
             min_reusable_offcut_mm=min_offcut,
-            strategy=self.var_strategy.get(),
+            strategy=strategy_key,
         )
         self._last_result = result
         self._last_result_dict = result.to_dict()
@@ -660,7 +669,7 @@ class CuttingFrame(ttk.Frame):
             "job_id": self.var_job.get().strip() or "ROZKROJ",
             "saw_kerf_mm": saw_kerf,
             "min_reusable_offcut_mm": min_offcut,
-            "strategy": self.var_strategy.get(),
+            "strategy": strategy_key,
             "items": [item.to_dict() for item in items],
         }
         try:
@@ -722,7 +731,7 @@ class CuttingFrame(ttk.Frame):
     def _render_summary(self, data: Dict[str, Any]) -> None:
         summary = data.get("summary", {})
         missing = data.get("missing", [])
-        strategy = str(data.get("strategy") or self.var_strategy.get() or "balanced")
+        strategy = strategy_label_to_key(str(data.get("strategy") or self.var_strategy.get() or "balanced"))
         strategy_txt = STRATEGY_LABELS.get(strategy, strategy)
         lines = [
             "PODSUMOWANIE",
@@ -1162,7 +1171,8 @@ class CuttingFrame(ttk.Frame):
             return
         self.var_job.set(str(job.get("job_id") or result.get("job_id") or calc_id))
         if result.get("strategy"):
-            self.var_strategy.set(str(result.get("strategy")))
+            key = strategy_label_to_key(str(result.get("strategy")))
+            self.var_strategy.set(STRATEGY_LABELS.get(key, key))
         self._last_result_dict = result
         self._render_result(result)
 
