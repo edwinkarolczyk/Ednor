@@ -308,7 +308,7 @@ class CuttingFrame(ttk.Frame):
 
         val = simpledialog.askstring(
             "Dodaj stan magazynowy",
-            "Długość sztangi (np. 6000mm lub 6m)\nIlość po spacji (opcjonalnie):",
+            "Podaj długość w mm (np. 6000)\nIlość po spacji (np. 6000 4):",
             initialvalue="6000",
         )
         if not val:
@@ -337,7 +337,7 @@ class CuttingFrame(ttk.Frame):
 
         val = simpledialog.askstring(
             "Dodaj odpad użytkowy",
-            "Długość odpadu (np. 1200mm lub 1.2m):",
+            "Podaj długość odpadu w mm (np. 1200):",
             initialvalue="1200",
         )
         if not val:
@@ -1235,9 +1235,17 @@ class CuttingFrame(ttk.Frame):
         if not sel:
             return
         values = self.tree_cuts.item(sel[0], "values")
+        raw_length = str(values[1])
+        raw_mm = raw_length.split("mm", 1)[0].strip()
+        try:
+            length_mm = float(raw_mm)
+        except Exception:
+            messagebox.showerror("Błąd", f"Nieprawidłowa długość:\n{values[1]}")
+            return
+
         data = {
             "material_id": values[0],
-            "length_mm": parse_length_to_mm(str(values[1])),
+            "length_mm": length_mm,
             "angle_left": values[2],
             "angle_right": values[3],
             "qty": values[4],
