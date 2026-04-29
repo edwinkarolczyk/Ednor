@@ -1,5 +1,5 @@
 # Plik: core/cutting_storage.py
-# Wersja: 0.5.0
+# Wersja: 0.6.0
 from __future__ import annotations
 
 import json
