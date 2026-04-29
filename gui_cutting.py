@@ -27,6 +27,7 @@ from core.cutting_storage import (
     log_stock_move,
     update_cutting_setting,
     upsert_material,
+    deactivate_material,
     build_material_display_name,
     material_size_from_dims,
     save_transport,
@@ -81,6 +82,10 @@ DEFAULT_KERF_MM = 2.5
 DEFAULT_MIN_OFFCUT_MM = 300
 DEFAULT_STRATEGY = "balanced"
 DEFAULT_JOB_ID = "ROZKROJ"
+DEFAULT_CUT_LENGTH_MM = 1500
+DEFAULT_CUT_ANGLE_LEFT = 0
+DEFAULT_CUT_ANGLE_RIGHT = 0
+DEFAULT_CUT_QTY = 1
 
 
 def _fmt_num(value: Any) -> str:
@@ -218,6 +223,9 @@ class CuttingFrame(ttk.Frame):
         self._settings: Dict[str, Any] = load_cutting_settings()
         self.var_tablet = tk.BooleanVar(value=False)
         self._resize_after_id = None
+        self._last_cut_length_mm = float(self._settings.get("last_cut_length_mm", DEFAULT_CUT_LENGTH_MM) or DEFAULT_CUT_LENGTH_MM)
+        self._last_cut_angle_left = float(self._settings.get("last_cut_angle_left", DEFAULT_CUT_ANGLE_LEFT) or DEFAULT_CUT_ANGLE_LEFT)
+        self._last_cut_angle_right = float(self._settings.get("last_cut_angle_right", DEFAULT_CUT_ANGLE_RIGHT) or DEFAULT_CUT_ANGLE_RIGHT)
         self._build_ui()
         self._refresh_materials()
         self._refresh_calculations()
@@ -293,6 +301,7 @@ class CuttingFrame(ttk.Frame):
         ttk.Button(top, text="+ TRANSPORT", command=self._add_transport_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 6))
         ttk.Button(top, text="+ DODAJ STAN", command=self._add_stock_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
         ttk.Button(top, text="+ DODAJ ODPAD", command=self._add_remnant_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
+        ttk.Button(top, text="Usuń", command=self._delete_selected_material, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_material, style="Cut.TButton").pack(side="right")
 
         self.tree_materials = ttk.Treeview(
@@ -905,6 +914,13 @@ class CuttingFrame(ttk.Frame):
         if material_id:
             self._remember_last_material(material_id)
 
+        self._last_cut_length_mm = float(length_mm)
+        self._last_cut_angle_left = float(angle_left)
+        self._last_cut_angle_right = float(angle_right)
+        update_cutting_setting("last_cut_length_mm", self._last_cut_length_mm)
+        update_cutting_setting("last_cut_angle_left", self._last_cut_angle_left)
+        update_cutting_setting("last_cut_angle_right", self._last_cut_angle_right)
+
     def _remember_last_material(self, material_id: str) -> None:
         material_id = str(material_id or "").strip()
         if not material_id:
@@ -1032,6 +1048,27 @@ class CuttingFrame(ttk.Frame):
                 return
             self._refresh_materials()
             self._refresh_stock_info()
+
+    def _delete_selected_material(self) -> None:
+        material_id = self._selected_material_id()
+        if not material_id:
+            messagebox.showwarning("Surowiec", "Wybierz surowiec do usunięcia.")
+            return
+        row = self._get_material_row(material_id)
+        label = str(row.get("display_name") or row.get("nazwa") or material_id) if row else material_id
+        ok = messagebox.askyesno(
+            "Usuń surowiec",
+            f"Ukryć surowiec z listy?\n\n{label}\n\nHistoria transportów i kalkulacji zostanie zachowana.",
+        )
+        if not ok:
+            return
+        try:
+            deactivate_material(material_id)
+        except Exception as exc:
+            messagebox.showerror("Surowiec", f"Nie udało się usunąć surowca:\n{exc}")
+            return
+        self._refresh_materials()
+        self._refresh_stock_info()
 
     def _add_transport_dialog(self) -> None:
         self._refresh_materials()
@@ -2236,10 +2273,13 @@ class _CutRowDialog:
         _apply_cutting_theme(self.win)
 
         self.parent = parent
+        last_len = float(getattr(parent, "_last_cut_length_mm", DEFAULT_CUT_LENGTH_MM) or DEFAULT_CUT_LENGTH_MM)
+        last_ang_l = float(getattr(parent, "_last_cut_angle_left", DEFAULT_CUT_ANGLE_LEFT) or DEFAULT_CUT_ANGLE_LEFT)
+        last_ang_r = float(getattr(parent, "_last_cut_angle_right", DEFAULT_CUT_ANGLE_RIGHT) or DEFAULT_CUT_ANGLE_RIGHT)
         self.v_material = tk.StringVar(value=str(row.get("material_id", parent._selected_material_id() if hasattr(parent, "_selected_material_id") else "")))
-        self.v_length = tk.StringVar(value=format_mm(float(row.get("length_mm", 1500) or 1500)))
-        self.v_angle_l = tk.StringVar(value=str(row.get("angle_left", "45")))
-        self.v_angle_r = tk.StringVar(value=str(row.get("angle_right", "-45")))
+        self.v_length = tk.StringVar(value=str(_fmt_num(row.get("length_mm", last_len))))
+        self.v_angle_l = tk.StringVar(value=str(_fmt_num(row.get("angle_left", last_ang_l))))
+        self.v_angle_r = tk.StringVar(value=str(_fmt_num(row.get("angle_right", last_ang_r))))
         self.v_qty = tk.StringVar(value=str(row.get("qty", "1")))
         self.v_label = tk.StringVar(value=str(row.get("label", "")))
 
@@ -2248,16 +2288,24 @@ class _CutRowDialog:
             material_values = [material_label(m) for m in parent._materials]
         self._label_to_id = parent._material_label_to_id if hasattr(parent, "_material_label_to_id") else {}
 
-        ttk.Label(self.win, text="Materiał", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
-        self.cbo_material = ttk.Combobox(self.win, textvariable=self.v_material, values=material_values, width=42)
+        ttk.Label(self.win, text="Surowiec", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
+        self.cbo_material = ttk.Combobox(
+            self.win,
+            values=material_values,
+            width=42,
+            state="readonly",
+        )
+        self.cbo_material.set(self.v_material.get())
         self.cbo_material.grid(row=0, column=1, padx=10, pady=6, sticky="ew")
         for label, mid in self._label_to_id.items():
             if mid == self.v_material.get():
-                self.v_material.set(label)
+                self.cbo_material.set(label)
                 break
+        self.cbo_material.bind("<Button-1>", lambda _e: self.cbo_material.event_generate("<Down>"))
+        self.cbo_material.bind("<FocusIn>", lambda _e: self.cbo_material.event_generate("<Down>"))
 
         fields = [
-            ("Długość [mm/cm/m]", self.v_length),
+            ("Długość [mm]", self.v_length),
             ("Kąt L [-60 do 60°]", self.v_angle_l),
             ("Kąt P [-60 do 60°]", self.v_angle_r),
             ("Ilość", self.v_qty),
@@ -2271,16 +2319,32 @@ class _CutRowDialog:
         btns.grid(row=len(fields) + 1, column=0, columnspan=2, pady=(10, 10))
         ttk.Button(btns, text="OK", command=self._ok, style="Cut.Red.TButton").pack(side="left", padx=5)
         ttk.Button(btns, text="Anuluj", command=self.win.destroy, style="Cut.TButton").pack(side="left", padx=5)
+        ttk.Label(
+            self.win,
+            text=(
+                "Podpowiedź: długość i kąty startują z ostatnio dodanej pozycji. "
+                "Możesz zostawić puste, wtedy zostaną użyte ostatnie wartości."
+            ),
+            style="Cut.Muted.TLabel",
+            wraplength=420,
+        ).grid(row=len(fields) + 2, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w")
 
     def _ok(self) -> None:
         try:
-            material = self.v_material.get().strip()
+            material = self.cbo_material.get().strip()
             material = self._label_to_id.get(material, material)
+            length_raw = self.v_length.get().strip()
+            angle_l_raw = self.v_angle_l.get().strip()
+            angle_r_raw = self.v_angle_r.get().strip()
+
+            last_len = float(getattr(self.parent, "_last_cut_length_mm", DEFAULT_CUT_LENGTH_MM) or DEFAULT_CUT_LENGTH_MM)
+            last_ang_l = float(getattr(self.parent, "_last_cut_angle_left", DEFAULT_CUT_ANGLE_LEFT) or DEFAULT_CUT_ANGLE_LEFT)
+            last_ang_r = float(getattr(self.parent, "_last_cut_angle_right", DEFAULT_CUT_ANGLE_RIGHT) or DEFAULT_CUT_ANGLE_RIGHT)
             self.result = {
                 "material_id": material,
-                "length_mm": parse_length_to_mm(self.v_length.get()),
-                "angle_left": validate_saw_angle(float(self.v_angle_l.get().replace(",", "."))),
-                "angle_right": validate_saw_angle(float(self.v_angle_r.get().replace(",", "."))),
+                "length_mm": parse_length_to_mm(length_raw) if length_raw else last_len,
+                "angle_left": validate_saw_angle(float(angle_l_raw.replace(",", "."))) if angle_l_raw else last_ang_l,
+                "angle_right": validate_saw_angle(float(angle_r_raw.replace(",", "."))) if angle_r_raw else last_ang_r,
                 "qty": int(self.v_qty.get()),
                 "label": self.v_label.get().strip(),
             }
