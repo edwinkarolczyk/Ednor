@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.0
+# Wersja: 0.9.1 - usunięto szybkie długości
 from __future__ import annotations
 
 import csv
@@ -368,15 +368,17 @@ class CuttingFrame(ttk.Frame):
         top.pack(fill="x", pady=(0, 6))
         ttk.Label(top, text="Lista do cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
-        btns = ttk.Frame(top, style="Cut.TFrame")
-        btns.pack(side="right")
-        ttk.Button(btns, text="+ DODAJ", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="left", padx=3)
-        ttk.Button(btns, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
-        ttk.Button(btns, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
-        ttk.Button(btns, text="Sortuj ↓", command=self._sort_cuts_longest_first, style="Cut.TButton").pack(side="left", padx=3)
-        ttk.Button(btns, text="Wyczyść", command=self._clear_cuts, style="Cut.TButton").pack(side="left", padx=3)
-        ttk.Button(btns, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
+        # Przyciski akcji - bardziej przejrzysty układ
+        actions = ttk.Frame(top, style="Cut.TFrame")
+        actions.pack(side="right", padx=5)
+        ttk.Button(actions, text="+ DODAJ", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="left", padx=3)
+        ttk.Button(actions, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(actions, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(actions, text="Sortuj ↓", command=self._sort_cuts_longest_first, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(actions, text="Wyczyść", command=self._clear_cuts, style="Cut.TButton").pack(side="left", padx=3)
+        ttk.Button(actions, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="left", padx=3)
 
+        # Narzędzia CSV
         tools = ttk.Frame(parent, style="Cut.TFrame")
         tools.pack(fill="x", pady=(0, 6))
         ttk.Button(tools, text="Import CSV", command=self._import_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
