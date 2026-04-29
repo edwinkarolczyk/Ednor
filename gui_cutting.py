@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from core.cutting_models import CutItem
 from core.cutting_optimizer import optimize_cutting
+from core.cutting_reports import generate_cutting_report_html
 from core.cutting_storage import (
     accept_cutting_calculation,
     add_remnant,
@@ -494,6 +495,18 @@ class CuttingFrame(ttk.Frame):
             text="Akceptuj kalkulację / zdejmij stan",
             command=self._accept_last_result,
             style="Cut.Red.TButton",
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            footer,
+            text="Etykiety CSV",
+            command=self._export_labels_csv,
+            style="Cut.TButton",
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            footer,
+            text="Raport HTML",
+            command=self._export_html_report,
+            style="Cut.TButton",
         ).pack(side="right", padx=(6, 0))
 
         ttk.Button(
@@ -1077,6 +1090,64 @@ class CuttingFrame(ttk.Frame):
         self._refresh_stock_info()
         self._refresh_materials()
         self._refresh_calculations()
+
+    def _export_labels_csv(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Etykiety CSV", "Najpierw oblicz albo wczytaj kalkulację.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Eksport etykiet CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Wszystkie pliki", "*.*")],
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["job", "material", "length_mm", "angle_left", "angle_right", "label"])
+                for bar in self._last_result_dict.get("bars_used", []):
+                    for cut in bar.get("cuts", []):
+                        writer.writerow(
+                            [
+                                self.var_job.get(),
+                                bar.get("material_id", ""),
+                                cut.get("length_mm", ""),
+                                cut.get("angle_left", ""),
+                                cut.get("angle_right", ""),
+                                cut.get("label", ""),
+                            ]
+                        )
+        except Exception as exc:
+            messagebox.showerror("Etykiety CSV", f"Nie udało się zapisać etykiet:\n{exc}")
+            return
+
+        messagebox.showinfo("Etykiety CSV", f"Zapisano:\n{path}")
+
+    def _export_html_report(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Raport HTML", "Najpierw oblicz albo wczytaj kalkulację.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Eksport raportu HTML",
+            defaultextension=".html",
+            filetypes=[("HTML", "*.html"), ("Wszystkie pliki", "*.*")],
+        )
+        if not path:
+            return
+
+        try:
+            html = generate_cutting_report_html(self._last_result_dict)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(html)
+        except Exception as exc:
+            messagebox.showerror("Raport HTML", f"Nie udało się zapisać raportu:\n{exc}")
+            return
+
+        messagebox.showinfo("Raport HTML", f"Zapisano:\n{path}")
 
     def _load_selected_calculation(self) -> None:
         sel = self.tree_calculations.selection()
