@@ -410,6 +410,11 @@ def add_stock_bar(
     qty: int,
     name: str = "",
     location: str = "",
+    transport_id: str = "",
+    line_id: str = "",
+    price_per_m: float = 0.0,
+    price_mode: str = "",
+    vat_percent: float = 0.0,
 ) -> str:
     data = load_cutting_stock_raw()
     material_id = str(material_id).strip()
@@ -431,6 +436,11 @@ def add_stock_bar(
             "length_mm": length_mm,
             "qty": qty,
             "location": location,
+            "transport_id": str(transport_id or "").strip(),
+            "line_id": str(line_id or "").strip(),
+            "price_per_m": float(price_per_m or 0),
+            "price_mode": str(price_mode or "").strip(),
+            "vat_percent": float(vat_percent or 0),
         }
     )
     return save_cutting_stock_raw(data)
