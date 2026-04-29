@@ -2032,6 +2032,14 @@ class _TransportDialog:
         )
         self.cbo_material.grid(row=0, column=3, padx=8, pady=6, sticky="ew")
 
+        def _safe_open_material_combo(_event):
+            try:
+                self.cbo_material.after(10, lambda: self.cbo_material.event_generate("<Alt-Down>"))
+            except Exception:
+                pass
+
+        self.cbo_material.bind("<Button-1>", _safe_open_material_combo)
+
         ttk.Label(add_box, text="Długość lagi [mm]", style="Cut.TLabel").grid(
             row=1, column=0, padx=8, pady=6, sticky="w"
         )
