@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.8.0
+# Wersja: 0.9.0
 from __future__ import annotations
 
 import csv
@@ -47,7 +47,11 @@ STRATEGY_BY_LABEL = {label: key for key, label in STRATEGY_LABELS.items()}
 
 def strategy_label_to_key(value: str) -> str:
     value = str(value or "").strip()
-    return STRATEGY_BY_LABEL.get(value, value if value in STRATEGY_LABELS else "balanced")
+    if value in STRATEGY_BY_LABEL:
+        return STRATEGY_BY_LABEL[value]
+    if value in STRATEGY_LABELS:
+        return value
+    return "balanced"
 
 
 MAT_COLUMNS = ("material_id", "typ", "nazwa", "rozmiar", "stock", "length")
@@ -80,6 +84,7 @@ def _cut_mark(angle: float, side: str) -> str:
 
     0     -> |
     +45   -> /
+    -45   -> \\
     """
     try:
         angle = float(angle)
@@ -88,7 +93,9 @@ def _cut_mark(angle: float, side: str) -> str:
 
     if abs(angle) < 0.001:
         return "|"
-    return "/"
+    if angle > 0:
+        return "/"
+    return "\\"
 
 
 def _cut_text(length: Any, angle_l: Any, angle_r: Any) -> str:
@@ -184,6 +191,7 @@ class CuttingFrame(ttk.Frame):
         self._materials: List[Dict[str, Any]] = []
         self._material_labels: Dict[str, str] = {}
         self._settings: Dict[str, Any] = load_cutting_settings()
+        self.var_tablet = tk.BooleanVar(value=False)
         self._build_ui()
         self._refresh_materials()
         self._refresh_calculations()
@@ -217,6 +225,13 @@ class CuttingFrame(ttk.Frame):
             state="readonly",
         )
         self.cbo_strategy.pack(side="left", padx=(5, 14))
+
+        ttk.Checkbutton(
+            header,
+            text="Tryb tablet",
+            variable=self.var_tablet,
+            command=self._apply_tablet_mode,
+        ).pack(side="left", padx=(0, 12))
 
         ttk.Button(header, text="Ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right")
 
@@ -301,7 +316,7 @@ class CuttingFrame(ttk.Frame):
         top.pack(fill="x", pady=(0, 6))
         ttk.Label(top, text="Lista do cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
-        ttk.Button(top, text="+ Dodaj", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="+ DODAJ ELEMENT DO CIĘCIA", command=self._add_cut_row_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
         ttk.Button(top, text="Edytuj", command=self._edit_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Duplikuj", command=self._duplicate_selected_cut, style="Cut.TButton").pack(side="right", padx=(0, 6))
         ttk.Button(top, text="Usuń", command=self._delete_selected_cut, style="Cut.TButton").pack(side="right")
@@ -361,9 +376,9 @@ class CuttingFrame(ttk.Frame):
             "1.0",
             "Legenda kątów:\n"
             "  |1500 mm (1.5 m)|  = cięcie proste 0° / 0°\n"
-            "  /1500 mm (1.5 m)/  = kąt z lewej/prawej strony w zakresie 0–60°\n\n"
+            "  /1500 mm (1.5 m)\\  = 45° / -45° — ukos jak romb/trapez\n\n"
             "Na tym etapie długość = wymiar do odmierzenia na pile.\n"
-            "Piła: tylko kąty 0–60°. Nie używamy kątów ujemnych.",
+            "Piła: zakres -60° do 60°. Znak kąta oznacza stronę ukosu.",
         )
         helper.configure(state="disabled")
 
@@ -516,6 +531,12 @@ class CuttingFrame(ttk.Frame):
             command=self._export_html_report,
             style="Cut.TButton",
         ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            footer,
+            text="Eksport CNC CSV",
+            command=self._export_cnc_csv,
+            style="Cut.TButton",
+        ).pack(side="right", padx=(6, 0))
 
         ttk.Button(
             footer,
@@ -561,6 +582,21 @@ class CuttingFrame(ttk.Frame):
             return
         self._settings["last_material_id"] = material_id
         update_cutting_setting("last_material_id", material_id)
+
+    def _apply_tablet_mode(self) -> None:
+        style = ttk.Style(self.winfo_toplevel())
+        if self.var_tablet.get():
+            style.configure("Cut.Treeview", rowheight=42, font=("Segoe UI", 14))
+            style.configure("Cut.Treeview.Heading", font=("Segoe UI", 13, "bold"), padding=(8, 8))
+            style.configure("Cut.TButton", font=("Segoe UI", 13), padding=(14, 9))
+            style.configure("Cut.Red.TButton", font=("Segoe UI", 13, "bold"), padding=(16, 10))
+            style.configure("Cut.TLabel", font=("Segoe UI", 12))
+        else:
+            style.configure("Cut.Treeview", rowheight=30, font=("Segoe UI", 10))
+            style.configure("Cut.Treeview.Heading", font=("Segoe UI", 10, "bold"), padding=(6, 6))
+            style.configure("Cut.TButton", font=("Segoe UI", 10), padding=(10, 6))
+            style.configure("Cut.Red.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 7))
+            style.configure("Cut.TLabel", font=("Segoe UI", 10))
 
     def _selected_material_id(self) -> str:
         sel = getattr(self, "tree_materials", None).selection() if hasattr(self, "tree_materials") else []
@@ -630,7 +666,7 @@ class CuttingFrame(ttk.Frame):
         try:
             self._validate_angles_or_warn(items)
         except Exception as exc:
-            messagebox.showerror("Rozkrój", f"{exc}\n\nPiła obsługuje tylko kąty 0–60°.")
+            messagebox.showerror("Rozkrój", f"{exc}\n\nPiła obsługuje tylko kąty -60° do 60°.")
             return
 
         stock = load_stock_bars()
@@ -881,7 +917,10 @@ class CuttingFrame(ttk.Frame):
             self.canvas.create_line(x, y0 - 4, x, y1 + 4, fill=TEXT, width=2)
             return
 
-        self.canvas.create_line(x - 8, y1 + 5, x + 8, y0 - 5, fill=RED_HOT, width=3)
+        if angle > 0:
+            self.canvas.create_line(x - 8, y1 + 5, x + 8, y0 - 5, fill=RED_HOT, width=3)
+        else:
+            self.canvas.create_line(x - 8, y0 - 5, x + 8, y1 + 5, fill=RED_HOT, width=3)
         self.canvas.create_text(
             x,
             y0 - 13,
@@ -1009,6 +1048,33 @@ class CuttingFrame(ttk.Frame):
             messagebox.showerror("Eksport CSV", f"Nie udało się zapisać CSV:\n{exc}")
             return
         messagebox.showinfo("Eksport CSV", f"Zapisano:\n{path}")
+
+
+    def _export_cnc_csv(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Eksport CNC CSV", "Najpierw oblicz albo wczytaj kalkulację.")
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Eksport CNC CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Wszystkie pliki", "*.*")],
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["job_id","bar_no","material_id","bar_source","bar_length_mm","length_mm","angle_left","angle_right","qty","label"])
+                for bar_no, bar in enumerate(self._last_result_dict.get("bars_used", []), start=1):
+                    for cut in bar.get("cuts", []):
+                        writer.writerow([self.var_job.get(),bar_no,bar.get("material_id", ""),bar.get("source", ""),bar.get("bar_length_mm", ""),cut.get("length_mm", ""),float(cut.get("angle_left", 0) or 0),float(cut.get("angle_right", 0) or 0),1,cut.get("label", "")])
+        except Exception as exc:
+            messagebox.showerror("Eksport CNC CSV", f"Nie udało się zapisać CNC CSV:\n{exc}")
+            return
+
+        messagebox.showinfo("Eksport CNC CSV", f"Zapisano:\n{path}")
 
     def _edit_selected_cut(self) -> None:
         sel = self.tree_cuts.selection()
@@ -1250,7 +1316,7 @@ class _CutRowDialog:
         self.v_material = tk.StringVar(value=str(row.get("material_id", parent._selected_material_id() if hasattr(parent, "_selected_material_id") else "")))
         self.v_length = tk.StringVar(value=format_mm(float(row.get("length_mm", 1500) or 1500)))
         self.v_angle_l = tk.StringVar(value=str(row.get("angle_left", "45")))
-        self.v_angle_r = tk.StringVar(value=str(row.get("angle_right", "45")))
+        self.v_angle_r = tk.StringVar(value=str(row.get("angle_right", "-45")))
         self.v_qty = tk.StringVar(value=str(row.get("qty", "1")))
         self.v_label = tk.StringVar(value=str(row.get("label", "")))
 
@@ -1269,8 +1335,8 @@ class _CutRowDialog:
 
         fields = [
             ("Długość [mm/cm/m]", self.v_length),
-            ("Kąt L [0-60°]", self.v_angle_l),
-            ("Kąt P [0-60°]", self.v_angle_r),
+            ("Kąt L [-60 do 60°]", self.v_angle_l),
+            ("Kąt P [-60 do 60°]", self.v_angle_r),
             ("Ilość", self.v_qty),
             ("Opis", self.v_label),
         ]

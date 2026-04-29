@@ -6,7 +6,7 @@ MM_PER_CM = 10.0
 CM_PER_M = 100.0
 MM_PER_M = 1000.0
 
-MIN_SAW_ANGLE = 0.0
+MIN_SAW_ANGLE = -60.0
 MAX_SAW_ANGLE = 60.0
 
 
@@ -74,7 +74,13 @@ def parse_length_to_mm(raw: str, default_unit: str = "mm") -> float:
 
 
 def clamp_saw_angle(value: float) -> float:
-    """Piła tnie tylko zakres 0–60 stopni."""
+    """Kąt techniczny w UI: -60 do 60 stopni.
+
+    Piła fizycznie ma zakres 0–60, ale znak oznacza stronę ukosu:
+    +45 = /
+    -45 = \\
+    0 = |
+    """
 
     value = float(value or 0)
     if value < MIN_SAW_ANGLE:
@@ -87,5 +93,5 @@ def clamp_saw_angle(value: float) -> float:
 def validate_saw_angle(value: float) -> float:
     value = float(value or 0)
     if value < MIN_SAW_ANGLE or value > MAX_SAW_ANGLE:
-        raise ValueError("Kąt piły musi być w zakresie 0–60°")
+        raise ValueError("Kąt piły musi być w zakresie -60° do 60°")
     return value
