@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.4 - transporty v1
+# Wersja: 0.9.5 - stabilna lista materiałów
 from __future__ import annotations
 
 import csv
@@ -2291,26 +2291,47 @@ class _CutRowDialog:
         self.v_qty = tk.StringVar(value=str(row.get("qty", "1")))
         self.v_label = tk.StringVar(value=str(row.get("label", "")))
 
+        def _open_combobox_safely(combo: ttk.Combobox) -> None:
+            """Bezpiecznie otwiera listę ttk.Combobox bez generowania eventów klawiatury.
+
+            Nie używamy event_generate("<Down>") ani event_generate("<Alt-Down>"),
+            bo na Windows/Tk potrafi to wywołać cichy błąd bez tracebacka.
+            """
+            try:
+                combo.tk.call("ttk::combobox::Post", str(combo))
+            except Exception:
+                pass
+
         material_values = []
         if hasattr(parent, "_materials"):
             material_values = [material_label(m) for m in parent._materials]
         self._label_to_id = parent._material_label_to_id if hasattr(parent, "_material_label_to_id") else {}
 
         ttk.Label(self.win, text="Surowiec", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
+        material_pick = ttk.Frame(self.win, style="Cut.TFrame")
+        material_pick.grid(row=0, column=1, padx=10, pady=6, sticky="ew")
+        material_pick.columnconfigure(0, weight=1)
         self.cbo_material = ttk.Combobox(
-            self.win,
+            material_pick,
             values=material_values,
             width=42,
             state="readonly",
         )
         self.cbo_material.set(self.v_material.get())
-        self.cbo_material.grid(row=0, column=1, padx=10, pady=6, sticky="ew")
+        self.cbo_material.grid(row=0, column=0, sticky="ew")
         for label, mid in self._label_to_id.items():
             if mid == self.v_material.get():
                 self.cbo_material.set(label)
                 break
-        self.cbo_material.bind("<Button-1>", lambda _e: self.cbo_material.event_generate("<Down>"))
-        self.cbo_material.bind("<FocusIn>", lambda _e: self.cbo_material.event_generate("<Down>"))
+        # Nie bindować FocusIn/Button-1 do event_generate.
+        # Native readonly combobox jest stabilniejszy; dodatkowy przycisk tylko otwiera listę.
+        ttk.Button(
+            material_pick,
+            text="▼",
+            width=3,
+            command=lambda: _open_combobox_safely(self.cbo_material),
+            style="Cut.TButton",
+        ).grid(row=0, column=1, padx=(4, 0), sticky="e")
 
         fields = [
             ("Długość [mm]", self.v_length),
