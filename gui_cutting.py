@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.10.0 - transporty, akceptacja, raport HTML
+# Wersja: 0.10.1 - zapotrzebowanie, ustawienia, backup JSON
 from __future__ import annotations
 
 import csv
@@ -71,6 +71,7 @@ CALC_COLUMNS = ("id", "created", "status", "job", "bars", "usage")
 STOCK_COLUMNS = ("kind", "material", "length", "qty", "total_mb", "price", "value", "transport", "location")
 TRANSPORT_COLUMNS = ("id", "created", "supplier", "lines", "mb", "net", "gross", "cost")
 TRANSPORT_LINE_COLUMNS = ("material", "length", "qty", "mb", "price", "value")
+NEEDS_COLUMNS = ("material", "need", "stock", "missing", "suggestion")
 
 DARK_BG = "#08080A"
 PANEL_BG = "#121217"
@@ -304,6 +305,7 @@ class CuttingFrame(ttk.Frame):
         tab_materials = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_stock = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_transports = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_needs = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_settings = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
 
         self.tabs.add(tab_start, text="Start")
@@ -311,6 +313,7 @@ class CuttingFrame(ttk.Frame):
         self.tabs.add(tab_materials, text="Surowce")
         self.tabs.add(tab_stock, text="Magazyn")
         self.tabs.add(tab_transports, text="Transporty")
+        self.tabs.add(tab_needs, text="Zapotrzebowanie")
         self.tabs.add(tab_settings, text="Ustawienia")
 
         self._build_start_tab(tab_start)
@@ -330,6 +333,7 @@ class CuttingFrame(ttk.Frame):
         self._build_materials(tab_materials)
         self._build_stock_tab(tab_stock)
         self._build_transports_tab(tab_transports)
+        self._build_needs_tab(tab_needs)
         self._build_settings_tab(tab_settings)
         self._build_footer()
 
@@ -423,6 +427,7 @@ class CuttingFrame(ttk.Frame):
             "  • Surowce — definicje profili/rur/prętów/płaskowników\n"
             "  • Magazyn — stan, odpady, później wartość i FIFO\n"
             "  • Transporty — przyjęcia materiału, cena/mb, dostawca\n"
+            "  • Zapotrzebowanie — braki materiałowe z aktualnej listy cięć\n"
             "  • Ustawienia — VAT/netto/brutto, ścieżki portable, parametry\n",
         )
         info.configure(state="disabled")
@@ -750,26 +755,118 @@ class CuttingFrame(ttk.Frame):
         ttk.Label(top, text="Ustawienia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
         ttk.Button(top, text="Pokaż ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right", padx=(6, 8))
 
-        msg = tk.Text(
-            parent,
-            height=12,
-            bg="#0D0D11",
-            fg=MUTED,
-            insertbackground=TEXT,
-            relief="flat",
-            wrap="word",
-            font=("Consolas", 10),
-        )
-        msg.pack(fill="both", expand=True)
-        msg.insert(
-            "1.0",
-            "Ustawienia v1:\n"
-            "  • dane programu są portable w Ednor_data obok EXE/projektu,\n"
-            "  • tryb ceny netto/brutto i VAT zapisują się z dialogu transportu,\n"
-            "  • rzaz, min. odpad i strategia zostają na razie w nagłówku rozkroju.\n\n"
-            "Docelowo tutaj trafi osobny formularz ustawień.\n",
-        )
-        msg.configure(state="disabled")
+        form = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        form.pack(fill="x", pady=(0, 10))
+
+        settings = load_cutting_settings()
+        self.var_set_price_mode = tk.StringVar(value=str(settings.get("price_mode", "netto") or "netto"))
+        self.var_set_vat = tk.StringVar(value=str(settings.get("vat_percent", 23) or 23))
+        self.var_set_kerf = tk.StringVar(value=str(settings.get("default_kerf_mm", self.var_kerf.get() or DEFAULT_KERF_MM)))
+        self.var_set_min_offcut = tk.StringVar(value=str(settings.get("default_min_offcut_mm", self.var_min_offcut.get() or DEFAULT_MIN_OFFCUT_MM)))
+        self.var_set_bar_length = tk.StringVar(value=str(settings.get("default_bar_length_mm", 6000) or 6000))
+        self.var_set_show_meters = tk.BooleanVar(value=bool(settings.get("show_meters_hint", True)))
+        self.var_set_tablet = tk.BooleanVar(value=bool(settings.get("tablet_mode", False)))
+
+        ttk.Label(form, text="Tryb cen", style="Cut.TLabel").grid(row=0, column=0, padx=10, pady=6, sticky="w")
+        ttk.Combobox(form, textvariable=self.var_set_price_mode, values=("netto", "brutto"), width=14, state="readonly").grid(row=0, column=1, padx=10, pady=6, sticky="w")
+        ttk.Label(form, text="VAT [%]", style="Cut.TLabel").grid(row=0, column=2, padx=10, pady=6, sticky="w")
+        ttk.Entry(form, textvariable=self.var_set_vat, width=12, style="Cut.TEntry").grid(row=0, column=3, padx=10, pady=6, sticky="w")
+        ttk.Label(form, text="Rzaz piły [mm]", style="Cut.TLabel").grid(row=1, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(form, textvariable=self.var_set_kerf, width=12, style="Cut.TEntry").grid(row=1, column=1, padx=10, pady=6, sticky="w")
+        ttk.Label(form, text="Minimalny odpad [mm]", style="Cut.TLabel").grid(row=1, column=2, padx=10, pady=6, sticky="w")
+        ttk.Entry(form, textvariable=self.var_set_min_offcut, width=12, style="Cut.TEntry").grid(row=1, column=3, padx=10, pady=6, sticky="w")
+        ttk.Label(form, text="Domyślna długość sztangi [mm]", style="Cut.TLabel").grid(row=2, column=0, padx=10, pady=6, sticky="w")
+        ttk.Entry(form, textvariable=self.var_set_bar_length, width=12, style="Cut.TEntry").grid(row=2, column=1, padx=10, pady=6, sticky="w")
+        ttk.Checkbutton(form, text="Tryb tablet", variable=self.var_set_tablet).grid(row=2, column=2, padx=10, pady=6, sticky="w")
+        ttk.Checkbutton(form, text="Pokazuj metry w podpowiedziach", variable=self.var_set_show_meters).grid(row=2, column=3, padx=10, pady=6, sticky="w")
+        ttk.Button(form, text="ZAPISZ USTAWIENIA", command=self._save_settings_from_tab, style="Cut.Red.TButton").grid(row=3, column=0, columnspan=2, padx=10, pady=(12, 10), sticky="w")
+
+        paths = get_cutting_debug_paths()
+        path_box = tk.Text(parent, height=9, bg="#0D0D11", fg=MUTED, insertbackground=TEXT, relief="flat", wrap="word", font=("Consolas", 10))
+        path_box.pack(fill="both", expand=True)
+        path_box.insert("1.0", "Ścieżki portable / dane programu:\n\n" + "\n".join(f"{k}: {v}" for k, v in paths.items()))
+        path_box.configure(state="disabled")
+
+    def _save_settings_from_tab(self) -> None:
+        try:
+            price_mode = self.var_set_price_mode.get().strip().lower()
+            if price_mode not in ("netto", "brutto"):
+                price_mode = "netto"
+            vat = float(str(self.var_set_vat.get()).replace(",", "."))
+            kerf = float(str(self.var_set_kerf.get()).replace(",", "."))
+            min_offcut = float(str(self.var_set_min_offcut.get()).replace(",", "."))
+            bar_length = float(str(self.var_set_bar_length.get()).replace(",", "."))
+            if vat < 0 or kerf < 0 or min_offcut < 0 or bar_length <= 0:
+                raise ValueError("Nieprawidłowe wartości ustawień.")
+        except Exception as exc:
+            messagebox.showerror("Ustawienia", str(exc))
+            return
+        update_cutting_setting("price_mode", price_mode)
+        update_cutting_setting("vat_percent", vat)
+        update_cutting_setting("default_kerf_mm", kerf)
+        update_cutting_setting("default_min_offcut_mm", min_offcut)
+        update_cutting_setting("default_bar_length_mm", bar_length)
+        update_cutting_setting("show_meters_hint", bool(self.var_set_show_meters.get()))
+        update_cutting_setting("tablet_mode", bool(self.var_set_tablet.get()))
+        self._settings = load_cutting_settings()
+        self.var_kerf.set(f"{kerf:g}")
+        self.var_min_offcut.set(f"{min_offcut:g}")
+        self.var_tablet.set(bool(self.var_set_tablet.get()))
+        self._apply_tablet_mode()
+        messagebox.showinfo("Ustawienia", "Ustawienia zapisane.")
+
+    def _build_needs_tab(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(0, 10))
+        ttk.Label(top, text="Zapotrzebowanie", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+        ttk.Button(top, text="PRZELICZ BRAKI", command=self._refresh_needs_table, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        self.lbl_needs_summary = ttk.Label(parent, text="Zapotrzebowanie: przelicz z aktualnej listy cięć.", style="Cut.Title.TLabel")
+        self.lbl_needs_summary.pack(fill="x", pady=(0, 8))
+        self.tree_needs = ttk.Treeview(parent, columns=NEEDS_COLUMNS, show="headings", selectmode="browse", height=18, style="Cut.Treeview")
+        self.tree_needs.pack(fill="both", expand=True)
+        labels = {"material": "Surowiec", "need": "Potrzeba", "stock": "Jest", "missing": "Brakuje", "suggestion": "Sugerowany zakup"}
+        for col in NEEDS_COLUMNS:
+            self.tree_needs.heading(col, text=labels[col])
+            self.tree_needs.column(col, width=180, anchor="w")
+        self.tree_needs.tag_configure("ok", foreground=GREEN)
+        self.tree_needs.tag_configure("missing", foreground=YELLOW)
+
+    def _calculate_needs_from_current_cuts(self) -> List[Dict[str, Any]]:
+        materials_by_id = {str(m.get("material_id", "")): m for m in self._materials}
+        need_mm_by_material: Dict[str, float] = {}
+        for item in self._read_cut_items():
+            material_id = str(item.material_id or "").strip()
+            if material_id:
+                need_mm_by_material[material_id] = need_mm_by_material.get(material_id, 0.0) + float(item.length_mm or 0) * int(item.qty or 1)
+        default_bar_mm = float(self._settings.get("default_bar_length_mm", 6000) or 6000)
+        rows: List[Dict[str, Any]] = []
+        for material_id, need_mm in sorted(need_mm_by_material.items()):
+            material = materials_by_id.get(material_id, {})
+            stock_mb = float(material.get("stock_mb", 0) or 0)
+            missing_mm = max(0.0, need_mm - (stock_mb * 1000.0))
+            missing_bars = int((missing_mm + default_bar_mm - 1) // default_bar_mm) if missing_mm > 0 else 0
+            rows.append({"material_id": material_id, "display": str(material.get("display_name") or material.get("nazwa") or material_id), "need_mb": need_mm / 1000.0, "stock_mb": stock_mb, "missing_mb": missing_mm / 1000.0, "suggestion": "-" if missing_bars <= 0 else f"{missing_bars} szt. po {default_bar_mm:g} mm"})
+        return rows
+
+    def _refresh_needs_table(self) -> None:
+        for iid in self.tree_needs.get_children():
+            self.tree_needs.delete(iid)
+        rows = self._calculate_needs_from_current_cuts()
+        missing_count = 0
+        missing_total = 0.0
+        for idx, row in enumerate(rows):
+            missing = float(row.get("missing_mb", 0) or 0)
+            if missing > 0:
+                missing_count += 1
+                missing_total += missing
+            self.tree_needs.insert("", "end", iid=f"need_{idx}_{row.get('material_id')}", values=(row.get("display", "-"), f"{float(row.get('need_mb', 0) or 0):g} mb", f"{float(row.get('stock_mb', 0) or 0):g} mb", f"{missing:g} mb", row.get("suggestion", "-")), tags=("missing" if missing > 0 else "ok",))
+        if not rows:
+            text = "Zapotrzebowanie: lista cięć jest pusta."
+        elif missing_count:
+            text = f"Braki: {missing_count} surowców | razem {missing_total:g} mb do domówienia"
+        else:
+            text = "Braki: brak — magazyn pokrywa aktualną listę cięć."
+        self.lbl_needs_summary.configure(text=text)
 
     def _panel_title(self, parent, text: str) -> None:
         box = ttk.Frame(parent, style="Cut.Panel.TFrame")

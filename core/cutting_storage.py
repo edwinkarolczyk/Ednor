@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import re
 import time
 from datetime import datetime
@@ -105,11 +106,29 @@ def _read_json(path: str, default: Any) -> Any:
         with open(path, "r", encoding="utf-8") as handle:
             return json.load(handle)
     except Exception:
+        # Nie nadpisujemy cicho uszkodzonego JSON-a.
+        # Przenosimy go obok jako .broken_TIMESTAMP i dopiero wtedy wracamy do defaultu.
+        try:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            broken_path = f"{path}.broken_{stamp}"
+            if os.path.exists(path):
+                os.replace(path, broken_path)
+        except Exception:
+            pass
         return default
 
 
 def _write_json(path: str, data: Any) -> str:
     _ensure_parent(path)
+
+    # Prosty backup ostatniej poprawnej wersji.
+    # Ważne przy portable EXE i JSON-ach obok programu.
+    try:
+        if os.path.exists(path):
+            shutil.copy2(path, f"{path}.bak")
+    except Exception:
+        pass
+
     tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2)
