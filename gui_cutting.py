@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.7 - magazyn tabela / etap 10
+# Wersja: 0.9.8 - fix magazyn duplicate iid
 from __future__ import annotations
 
 import csv
@@ -567,7 +567,7 @@ class CuttingFrame(ttk.Frame):
                 total_mb += mb
                 total_net += net
                 total_gross += gross
-                iid = str(row.get("id") or f"{bucket_name}_{idx}")
+                iid = f"{bucket_name}_{idx}_{str(row.get('id') or '')}"
                 self.tree_stock.insert(
                     "",
                     "end",
