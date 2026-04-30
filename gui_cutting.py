@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.2 - duża karta operatora + checklista cięć
+# Wersja: 1.1.3 - fix checklisty i skalowania karty operatora
 from __future__ import annotations
 
 import csv
@@ -3114,21 +3114,66 @@ class _OperatorChecklistWindow:
         self.win.transient(parent.winfo_toplevel())
         _apply_cutting_theme(self.win)
         _setup_dialog_window(self.win, DEFAULT_OPERATOR_DIALOG_GEOMETRY, (980, 640))
+        self.win.rowconfigure(0, weight=1)
 
         root = ttk.Frame(self.win, padding=(10, 10, 10, 10), style="Cut.TFrame")
         root.grid(row=0, column=0, sticky="nsew")
         root.columnconfigure(0, weight=1)
         root.rowconfigure(2, weight=1)
-        root.rowconfigure(4, weight=2)
         self.lbl_progress = ttk.Label(root, text="Postęp: -", style="Cut.Subtitle.TLabel")
         self.lbl_progress.grid(row=0, column=0, sticky="e", pady=(0, 8))
-        self.txt_map = tk.Text(root, height=8, bg="#0D0D11", fg=TEXT, insertbackground=TEXT, relief="flat", wrap="none", font=("Consolas", 12))
-        self.txt_map.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
-        self.tree = ttk.Treeview(root, columns=OPERATOR_CHECK_COLUMNS, show="headings", selectmode="extended", height=14, style="Cut.Treeview")
-        self.tree.grid(row=4, column=0, sticky="nsew")
+
+        split = ttk.Panedwindow(root, orient="vertical")
+        split.grid(row=2, column=0, sticky="nsew")
+
+        map_frame = ttk.Frame(split, style="Cut.Panel.TFrame")
+        map_frame.columnconfigure(0, weight=1)
+        map_frame.rowconfigure(1, weight=1)
+        list_frame = ttk.Frame(split, style="Cut.TFrame")
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(1, weight=1)
+        split.add(map_frame, weight=1)
+        split.add(list_frame, weight=3)
+
+        ttk.Label(map_frame, text="MAPA SZTANG", style="Cut.Subtitle.TLabel").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
+        map_scroll_y = ttk.Scrollbar(map_frame, orient="vertical")
+        map_scroll_x = ttk.Scrollbar(map_frame, orient="horizontal")
+        self.txt_map = tk.Text(
+            map_frame, height=7, bg="#0D0D11", fg=TEXT, insertbackground=TEXT, relief="flat", wrap="none", font=("Consolas", 12),
+            yscrollcommand=map_scroll_y.set, xscrollcommand=map_scroll_x.set
+        )
+        map_scroll_y.configure(command=self.txt_map.yview)
+        map_scroll_x.configure(command=self.txt_map.xview)
+        self.txt_map.grid(row=1, column=0, sticky="nsew", padx=(10, 0), pady=(0, 0))
+        map_scroll_y.grid(row=1, column=1, sticky="ns", padx=(0, 10), pady=(0, 0))
+        map_scroll_x.grid(row=2, column=0, sticky="ew", padx=(10, 0), pady=(0, 10))
+
+        ttk.Label(list_frame, text="LISTA CIĘĆ — dwuklik przełącza ucięte / nieucięte", style="Cut.Subtitle.TLabel").grid(row=0, column=0, sticky="w", pady=(4, 6))
+        tree_box = ttk.Frame(list_frame, style="Cut.TFrame")
+        tree_box.grid(row=1, column=0, sticky="nsew")
+        tree_box.columnconfigure(0, weight=1)
+        tree_box.rowconfigure(0, weight=1)
+        tree_scroll_y = ttk.Scrollbar(tree_box, orient="vertical")
+        tree_scroll_x = ttk.Scrollbar(tree_box, orient="horizontal")
+        self.tree = ttk.Treeview(
+            tree_box, columns=OPERATOR_CHECK_COLUMNS, show="headings", selectmode="extended", height=14, style="Cut.Treeview",
+            yscrollcommand=tree_scroll_y.set, xscrollcommand=tree_scroll_x.set
+        )
+        tree_scroll_y.configure(command=self.tree.yview)
+        tree_scroll_x.configure(command=self.tree.xview)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        tree_scroll_y.grid(row=0, column=1, sticky="ns")
+        tree_scroll_x.grid(row=1, column=0, sticky="ew")
         for col, lbl in {"done":"Ucięte","bar":"Sztanga","cut":"Nr","material":"Surowiec","length":"Długość","shape":"Kształt","angles":"Kąty","label":"Opis"}.items():
             self.tree.heading(col, text=lbl)
-        self.tree.bind("<Double-1>", lambda _e: self._toggle_selected())
+        self.tree.bind("<Double-1>", self._on_tree_double_click)
+        self.tree.bind("<space>", lambda _e: self._toggle_selected())
+        hint = ttk.Label(
+            list_frame,
+            text="Uwaga: checklista nie zdejmuje materiału z magazynu. Magazyn schodzi dopiero przez AKCEPTUJ.",
+            style="Cut.Muted.TLabel",
+        )
+        hint.grid(row=2, column=0, sticky="w", pady=(8, 0))
         self._refresh()
 
     def _iter_cuts(self):
@@ -3170,13 +3215,43 @@ class _OperatorChecklistWindow:
         self.txt_map.insert("1.0", "\n".join(lines) if lines else "Brak danych. Najpierw oblicz rozkrój.")
         self.txt_map.configure(state="disabled")
 
+    def _on_tree_double_click(self, event) -> None:
+        """Dwuklik ma działać na wierszu pod kursorem, nie tylko na aktualnej selekcji."""
+        row_id = self.tree.identify_row(event.y)
+        if not row_id:
+            return
+        try:
+            self.tree.selection_set(row_id)
+            self.tree.focus(row_id)
+        except Exception:
+            pass
+        self._toggle_selected()
+        return "break"
+
     def _toggle_selected(self) -> None:
-        for key in [str(iid) for iid in self.tree.selection()]:
+        keys = [str(iid) for iid in self.tree.selection()]
+        if not keys:
+            return
+        for key in keys:
             self.progress[key] = not bool(self.progress.get(key))
         self.parent._last_result_dict = self.result
         self.parent._save_operator_progress()
+        self._refresh_progress_only(keys)
         self.parent._render_operator_card(self.result)
-        self._refresh()
+
+    def _refresh_progress_only(self, keys: List[str]) -> None:
+        total = len(list(self._iter_cuts()))
+        done = 0
+        for key in keys:
+            if self.tree.exists(key):
+                done_now = bool(self.progress.get(key))
+                values = list(self.tree.item(key, "values"))
+                if values:
+                    values[0] = "☑" if done_now else "☐"
+                self.tree.item(key, values=values, tags=("done" if done_now else "todo",))
+        for key in self.progress:
+            done += 1 if bool(self.progress.get(key)) else 0
+        self.lbl_progress.configure(text=f"Postęp: {done} / {total} ucięte")
 
 
 class _CutRowDialog:
