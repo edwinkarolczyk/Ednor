@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.0 - technologiczna mapa sztangi operatora
+# Wersja: 1.1.1 - skalowanie okien i zakładek
 from __future__ import annotations
 
 import csv
@@ -92,6 +92,11 @@ DEFAULT_CUT_LENGTH_MM = 1500
 DEFAULT_CUT_ANGLE_LEFT = 0
 DEFAULT_CUT_ANGLE_RIGHT = 0
 DEFAULT_CUT_QTY = 1
+DEFAULT_WINDOW_GEOMETRY = "1280x820"
+DEFAULT_WINDOW_MINSIZE = (1100, 700)
+DEFAULT_DIALOG_MINSIZE = (520, 360)
+DEFAULT_TRANSPORT_DIALOG_GEOMETRY = "980x680"
+DEFAULT_MATERIAL_DIALOG_GEOMETRY = "620x520"
 
 
 def _fmt_num(value: Any) -> str:
@@ -354,6 +359,41 @@ def _apply_cutting_theme(root: tk.Misc) -> None:
     )
 
 
+def _setup_window_geometry(root: tk.Misc) -> None:
+    """Ustawia sensowny rozmiar głównego okna."""
+    try:
+        top = root.winfo_toplevel()
+        top.geometry(DEFAULT_WINDOW_GEOMETRY)
+        top.minsize(*DEFAULT_WINDOW_MINSIZE)
+        try:
+            top.state("zoomed")
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _make_tab_grid(tab: tk.Misc) -> None:
+    """Przygotowuje zakładkę do skalowania na pełne okno."""
+    try:
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(0, weight=1)
+    except Exception:
+        pass
+
+
+def _setup_dialog_window(win: tk.Toplevel, geometry: str, minsize: tuple[int, int] = DEFAULT_DIALOG_MINSIZE) -> None:
+    """Wspólny setup dialogów: rozmiar, skalowanie, minimalny rozmiar."""
+    try:
+        win.geometry(geometry)
+        win.minsize(*minsize)
+        win.resizable(True, True)
+        win.columnconfigure(0, weight=1)
+        win.rowconfigure(0, weight=1)
+    except Exception:
+        pass
+
+
 class CuttingFrame(ttk.Frame):
     """Panel rozkroju profili/sztang/prętów.
 
@@ -366,6 +406,7 @@ class CuttingFrame(ttk.Frame):
 
     def __init__(self, master, config: Optional[Dict[str, Any]] = None):
         _apply_cutting_theme(master.winfo_toplevel())
+        _setup_window_geometry(master.winfo_toplevel())
         super().__init__(master, padding=(12, 12, 12, 12), style="Cut.TFrame")
         self.config_obj = config or {}
         self._last_result = None
@@ -429,13 +470,16 @@ class CuttingFrame(ttk.Frame):
         self.tabs = ttk.Notebook(self, style="Cut.TNotebook")
         self.tabs.pack(fill="both", expand=True)
 
-        tab_start = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_start = ttk.Frame(self.tabs, padding=(8, 8, 8, 8), style="Cut.TFrame")
         tab_cutting = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_materials = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_stock = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_transports = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_needs = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
         tab_settings = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+
+        for tab in (tab_start, tab_cutting, tab_materials, tab_stock, tab_transports, tab_needs, tab_settings):
+            _make_tab_grid(tab)
 
         self.tabs.add(tab_start, text="Start")
         self.tabs.add(tab_cutting, text="Rozkrój")
@@ -448,7 +492,7 @@ class CuttingFrame(ttk.Frame):
         self._build_start_tab(tab_start)
 
         main = ttk.Panedwindow(tab_cutting, orient="horizontal")
-        main.pack(fill="both", expand=True)
+        main.grid(row=0, column=0, sticky="nsew")
 
         left = ttk.Frame(main, padding=(0, 0, 10, 0), style="Cut.TFrame")
         right = ttk.Frame(main, padding=(10, 0, 0, 0), style="Cut.TFrame")
@@ -2465,6 +2509,7 @@ class _MaterialDialog:
         self.win.transient(parent.winfo_toplevel())
         self.win.grab_set()
         _apply_cutting_theme(self.win)
+        _setup_dialog_window(self.win, DEFAULT_MATERIAL_DIALOG_GEOMETRY, (560, 460))
 
         self._material_id = str(row.get("material_id", "")).strip()
         self.v_typ = tk.StringVar(value=str(row.get("typ", "profil") or "profil"))
@@ -2654,6 +2699,7 @@ class _TransportDialog:
         self.win.transient(parent.winfo_toplevel())
         self.win.grab_set()
         _apply_cutting_theme(self.win)
+        _setup_dialog_window(self.win, DEFAULT_TRANSPORT_DIALOG_GEOMETRY, (880, 600))
 
         self.v_transport_id = tk.StringVar(value=next_transport_id())
         self.v_supplier = tk.StringVar(value="")
@@ -3003,6 +3049,7 @@ class _CutRowDialog:
         self.win.transient(parent.winfo_toplevel())
         self.win.grab_set()
         _apply_cutting_theme(self.win)
+        _setup_dialog_window(self.win, "620x430", (560, 380))
 
         self.parent = parent
         last_len = float(getattr(parent, "_last_cut_length_mm", DEFAULT_CUT_LENGTH_MM) or DEFAULT_CUT_LENGTH_MM)
@@ -3220,12 +3267,8 @@ def open_panel_cutting(parent, root=None, app=None, notebook=None, *args, **kwar
 if __name__ == "__main__":
     root = tk.Tk()
     root.title(f"{APP_NAME} — Rozkrój / cięcie")
-    root.geometry("1400x850")
+    _setup_window_geometry(root)
     _apply_cutting_theme(root)
-    try:
-        root.state("zoomed")
-    except Exception:
-        pass
     frame = CuttingFrame(root)
     frame.pack(fill="both", expand=True)
     root.mainloop()
