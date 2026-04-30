@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.1 - skalowanie okien i zakładek
+# Wersja: 1.1.2 - duża karta operatora + checklista cięć
 from __future__ import annotations
 
 import csv
@@ -72,6 +72,7 @@ STOCK_COLUMNS = ("kind", "material", "length", "qty", "total_mb", "price", "valu
 TRANSPORT_COLUMNS = ("id", "created", "supplier", "lines", "mb", "net", "gross", "cost")
 TRANSPORT_LINE_COLUMNS = ("material", "length", "qty", "mb", "price", "value")
 NEEDS_COLUMNS = ("material", "need", "stock", "missing", "suggestion")
+OPERATOR_CHECK_COLUMNS = ("done", "bar", "cut", "material", "length", "shape", "angles", "label")
 
 DARK_BG = "#08080A"
 PANEL_BG = "#121217"
@@ -97,6 +98,7 @@ DEFAULT_WINDOW_MINSIZE = (1100, 700)
 DEFAULT_DIALOG_MINSIZE = (520, 360)
 DEFAULT_TRANSPORT_DIALOG_GEOMETRY = "980x680"
 DEFAULT_MATERIAL_DIALOG_GEOMETRY = "620x520"
+DEFAULT_OPERATOR_DIALOG_GEOMETRY = "1180x760"
 
 
 def _fmt_num(value: Any) -> str:
@@ -392,6 +394,12 @@ def _setup_dialog_window(win: tk.Toplevel, geometry: str, minsize: tuple[int, in
         win.rowconfigure(0, weight=1)
     except Exception:
         pass
+
+
+def _operator_progress_key(bar_index: int, cut_index: int) -> str:
+    """Klucz postępu operatora zapisany w JSON kalkulacji."""
+
+    return f"bar_{int(bar_index)}_cut_{int(cut_index)}"
 
 
 class CuttingFrame(ttk.Frame):
@@ -1197,6 +1205,9 @@ class CuttingFrame(ttk.Frame):
         lines.append("EDNOR — KARTA CIĘCIA / OPERATOR")
         lines.append(f"Zlecenie: {job_id}")
         lines.append("=" * 72)
+        lines.append(self._operator_progress_summary(data))
+        lines.append("☑ = ucięte / ☐ = do cięcia")
+        lines.append("")
 
         if not bars:
             lines.append("Brak obliczonego wyniku.")
@@ -1223,6 +1234,10 @@ class CuttingFrame(ttk.Frame):
 
             source_cuts = bar.get("cuts", []) or []
             for local_step, cut in enumerate(source_cuts, start=1):
+                progress = data.get("operator_progress", {})
+                if not isinstance(progress, dict):
+                    progress = {}
+                done_mark = "☑" if progress.get(_operator_progress_key(bar_no, local_step)) else "☐"
                 length_mm = float(cut.get("length_mm", 0) or 0)
                 angle_l = float(cut.get("angle_left", 0) or 0)
                 angle_r = float(cut.get("angle_right", 0) or 0)
@@ -1232,7 +1247,7 @@ class CuttingFrame(ttk.Frame):
                 flip_note = " | OBRÓĆ DETAL NA MAPIE" if oriented.get("_operator_flipped") else ""
                 label_txt = f" | {label}" if label else ""
                 lines.append(
-                    f"{local_step:>2}. {length_mm:g} mm   {shape:<5}   "
+                    f"{done_mark} {local_step:>2}. {length_mm:g} mm   {shape:<5}   "
                     f"{angle_l:g}° / {angle_r:g}°{flip_note}{label_txt}"
                 )
 
@@ -1617,6 +1632,12 @@ class CuttingFrame(ttk.Frame):
             footer,
             text="Akceptuj kalkulację / zdejmij stan",
             command=self._accept_last_result,
+            style="Cut.Red.TButton",
+        ).pack(side="right", padx=(6, 0))
+        ttk.Button(
+            footer,
+            text="KARTA OPERATORA",
+            command=self._open_operator_checklist_window,
             style="Cut.Red.TButton",
         ).pack(side="right", padx=(6, 0))
         ttk.Button(
@@ -2473,6 +2494,43 @@ class CuttingFrame(ttk.Frame):
 
         messagebox.showinfo("Raport HTML", f"Zapisano:\n{path}")
 
+    def _operator_progress_dict(self) -> Dict[str, bool]:
+        if not self._last_result_dict:
+            return {}
+        progress = self._last_result_dict.setdefault("operator_progress", {})
+        if not isinstance(progress, dict):
+            progress = {}
+            self._last_result_dict["operator_progress"] = progress
+        return progress
+
+    def _save_operator_progress(self) -> None:
+        if not self._last_result_dict:
+            return
+        job_id = str(self._last_result_dict.get("job_id") or self.var_job.get() or DEFAULT_JOB_ID).strip()
+        if not job_id:
+            job_id = DEFAULT_JOB_ID
+        try:
+            save_cut_result(job_id, self._last_result_dict)
+        except Exception:
+            pass
+
+    def _operator_progress_summary(self, data: Optional[Dict[str, Any]] = None) -> str:
+        data = data or self._last_result_dict or {}
+        progress = data.get("operator_progress", {})
+        if not isinstance(progress, dict):
+            progress = {}
+        total = 0
+        for bar in data.get("bars_used", []) or []:
+            total += len(bar.get("cuts", []) or [])
+        done = sum(1 for value in progress.values() if bool(value))
+        return f"Postęp operatora: {done} / {total} ucięte"
+
+    def _open_operator_checklist_window(self) -> None:
+        if not self._last_result_dict:
+            messagebox.showwarning("Karta operatora", "Najpierw oblicz rozkrój.")
+            return
+        _OperatorChecklistWindow(self)
+
     def _load_selected_calculation(self) -> None:
         sel = self.tree_calculations.selection()
         if not sel:
@@ -3038,6 +3096,87 @@ class _TransportDialog:
         update_cutting_setting("price_mode", self.result["price_mode"])
         update_cutting_setting("vat_percent", vat)
         self.win.destroy()
+
+
+class _OperatorChecklistWindow:
+    """Duże okno operatora: mapa sztang + checklista wykonanych cięć."""
+
+    def __init__(self, parent: CuttingFrame):
+        self.parent = parent
+        self.result = parent._last_result_dict or {}
+        self.progress = self.result.setdefault("operator_progress", {})
+        if not isinstance(self.progress, dict):
+            self.progress = {}
+            self.result["operator_progress"] = self.progress
+
+        self.win = tk.Toplevel(parent)
+        self.win.title("Karta operatora / mapa cięcia")
+        self.win.transient(parent.winfo_toplevel())
+        _apply_cutting_theme(self.win)
+        _setup_dialog_window(self.win, DEFAULT_OPERATOR_DIALOG_GEOMETRY, (980, 640))
+
+        root = ttk.Frame(self.win, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        root.grid(row=0, column=0, sticky="nsew")
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(2, weight=1)
+        root.rowconfigure(4, weight=2)
+        self.lbl_progress = ttk.Label(root, text="Postęp: -", style="Cut.Subtitle.TLabel")
+        self.lbl_progress.grid(row=0, column=0, sticky="e", pady=(0, 8))
+        self.txt_map = tk.Text(root, height=8, bg="#0D0D11", fg=TEXT, insertbackground=TEXT, relief="flat", wrap="none", font=("Consolas", 12))
+        self.txt_map.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
+        self.tree = ttk.Treeview(root, columns=OPERATOR_CHECK_COLUMNS, show="headings", selectmode="extended", height=14, style="Cut.Treeview")
+        self.tree.grid(row=4, column=0, sticky="nsew")
+        for col, lbl in {"done":"Ucięte","bar":"Sztanga","cut":"Nr","material":"Surowiec","length":"Długość","shape":"Kształt","angles":"Kąty","label":"Opis"}.items():
+            self.tree.heading(col, text=lbl)
+        self.tree.bind("<Double-1>", lambda _e: self._toggle_selected())
+        self._refresh()
+
+    def _iter_cuts(self):
+        for bar_index, bar in enumerate(self.result.get("bars_used", []) or [], start=1):
+            material = self.parent._display_material(str(bar.get("material_id", "")))
+            map_text, warnings, _oriented = _operator_bar_map_text(bar)
+            for cut_index, cut in enumerate(bar.get("cuts", []) or [], start=1):
+                yield bar_index, cut_index, cut, material, map_text, warnings
+
+    def _refresh(self) -> None:
+        self._refresh_map()
+        for iid in self.tree.get_children():
+            self.tree.delete(iid)
+        total = 0
+        done = 0
+        for bar_index, cut_index, cut, material, _map_text, _warnings in self._iter_cuts():
+            key = _operator_progress_key(bar_index, cut_index)
+            is_done = bool(self.progress.get(key))
+            total += 1
+            done += 1 if is_done else 0
+            left = float(cut.get("angle_left", 0) or 0)
+            right = float(cut.get("angle_right", 0) or 0)
+            self.tree.insert("", "end", iid=key, values=("☑" if is_done else "☐", str(bar_index), str(cut_index), material, format_mm(float(cut.get("length_mm", 0) or 0)), _operator_cut_shape(left, right), f"L={left:g}° / P={right:g}°", str(cut.get("label", "") or "")))
+        self.lbl_progress.configure(text=f"Postęp: {done} / {total} ucięte")
+
+    def _refresh_map(self) -> None:
+        self.txt_map.configure(state="normal")
+        self.txt_map.delete("1.0", "end")
+        lines: List[str] = []
+        for bar_index, bar in enumerate(self.result.get("bars_used", []) or [], start=1):
+            material = self.parent._display_material(str(bar.get("material_id", "")))
+            length = float(bar.get("bar_length_mm", 0) or 0)
+            map_text, warnings, _oriented = _operator_bar_map_text(bar)
+            lines.append(f"SZTANGA {bar_index}: {material} / {format_mm(length)}")
+            lines.append(f"MAPA: {map_text}")
+            for warning in warnings:
+                lines.append(f"  - {warning}")
+            lines.append("")
+        self.txt_map.insert("1.0", "\n".join(lines) if lines else "Brak danych. Najpierw oblicz rozkrój.")
+        self.txt_map.configure(state="disabled")
+
+    def _toggle_selected(self) -> None:
+        for key in [str(iid) for iid in self.tree.selection()]:
+            self.progress[key] = not bool(self.progress.get(key))
+        self.parent._last_result_dict = self.result
+        self.parent._save_operator_progress()
+        self.parent._render_operator_card(self.result)
+        self._refresh()
 
 
 class _CutRowDialog:
