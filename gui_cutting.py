@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.10.1 - zapotrzebowanie, ustawienia, backup JSON
+# Wersja: 1.1.0 - technologiczna mapa sztangi operatora
 from __future__ import annotations
 
 import csv
@@ -140,6 +140,135 @@ def _operator_cut_shape(angle_l: Any, angle_r: Any) -> str:
     """
 
     return f"{_cut_mark(float(angle_l or 0), 'L')}---{_cut_mark(float(angle_r or 0), 'R')}"
+
+
+def _machine_angle_value(angle: Any) -> float:
+    """Kąt technologiczny do porównywania i przyszłego CNC.
+
+    Teraz operator czyta go z karty i ustawia ręcznie.
+    Później ta sama wartość może iść do eksportu maszyny.
+    """
+
+    try:
+        return round(float(angle or 0), 3)
+    except Exception:
+        return 0.0
+
+
+def _angles_compatible(a: Any, b: Any, tolerance: float = 0.001) -> bool:
+    """Czy dwa sąsiednie kąty mogą tworzyć jedno wspólne cięcie."""
+
+    return abs(_machine_angle_value(a) - _machine_angle_value(b)) <= tolerance
+
+
+def _flip_cut_for_operator(cut: Dict[str, Any]) -> Dict[str, Any]:
+    """Odwraca detal na potrzeby mapy operatora.
+
+    Nie zmienia danych źródłowych optymalizacji. To jest tylko wariant
+    ułożenia na mapie/kolejności cięcia.
+    """
+
+    out = dict(cut)
+    out["angle_left"], out["angle_right"] = cut.get("angle_right", 0), cut.get("angle_left", 0)
+    out["_operator_flipped"] = not bool(cut.get("_operator_flipped", False))
+    return out
+
+
+def _pick_orientation_for_previous(prev_right_angle: Any, cut: Dict[str, Any]) -> Dict[str, Any]:
+    """Dobiera orientację detalu, żeby wspólny kąt pasował do poprzedniego.
+
+    Preferencja:
+    1. zostaw jak jest, jeśli lewy kąt pasuje do prawego kąta poprzedniego,
+    2. odwróć detal, jeśli wtedy pasuje,
+    3. zostaw jak jest i mapa pokaże `!!!`.
+    """
+
+    if prev_right_angle is None:
+        return dict(cut)
+
+    normal = dict(cut)
+    if _angles_compatible(prev_right_angle, normal.get("angle_left", 0)):
+        return normal
+
+    flipped = _flip_cut_for_operator(cut)
+    if _angles_compatible(prev_right_angle, flipped.get("angle_left", 0)):
+        return flipped
+
+    return normal
+
+
+def _operator_piece_shape_for_map(cut: Dict[str, Any]) -> str:
+    """Skrócony symbol detalu na mapie całej sztangi."""
+
+    left = _cut_mark(_machine_angle_value(cut.get("angle_left", 0)), "L")
+    right = _cut_mark(_machine_angle_value(cut.get("angle_right", 0)), "R")
+    try:
+        length = float(cut.get("length_mm", 0) or 0)
+    except Exception:
+        length = 0
+
+    # Prosty kompromis: dłuższy detal dostaje więcej kresek, ale bez robienia tasiemca.
+    dash_count = max(3, min(10, int(round(length / 500.0)) if length else 4))
+    return f"{left}{'-' * dash_count}{right}"
+
+
+def _operator_join_token(left_angle: Any, right_angle: Any) -> str:
+    """Łącznik między sąsiednimi detalami.
+
+    Zgodne kąty = jedno wspólne cięcie.
+    Niezgodne kąty = ostrzeżenie technologiczne, nie udajemy normalnego `/\\`.
+    """
+
+    if _angles_compatible(left_angle, right_angle):
+        mark = _cut_mark(_machine_angle_value(left_angle), "R")
+        if mark == "\\":
+            return " \\\\ "
+        if mark == "/":
+            return " // "
+        return " || "
+    return " !!! "
+
+
+def _operator_bar_map_text(bar: Dict[str, Any]) -> tuple[str, List[str], List[Dict[str, Any]]]:
+    """Buduje technologiczną mapę całej sztangi.
+
+    Zwraca:
+    - tekst mapy,
+    - ostrzeżenia,
+    - listę detali w orientacji pokazanej na mapie
+    """
+
+    cuts = [dict(c) for c in (bar.get("cuts", []) or []) if isinstance(c, dict)]
+    if not cuts:
+        return "| ODPAD |", [], []
+
+    oriented: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    prev_right = None
+    for idx, cut in enumerate(cuts, start=1):
+        chosen = _pick_orientation_for_previous(prev_right, cut)
+        if prev_right is not None and not _angles_compatible(prev_right, chosen.get("angle_left", 0)):
+            warnings.append(
+                f"Detal {idx - 1} → {idx}: niezgodne kąty "
+                f"{_machine_angle_value(prev_right):g}° / {_machine_angle_value(chosen.get('angle_left', 0)):g}°"
+            )
+        oriented.append(chosen)
+        prev_right = chosen.get("angle_right", 0)
+
+    parts: List[str] = ["| "]
+    for idx, cut in enumerate(oriented):
+        if idx > 0:
+            previous = oriented[idx - 1]
+            parts.append(_operator_join_token(previous.get("angle_right", 0), cut.get("angle_left", 0)))
+        parts.append(_operator_piece_shape_for_map(cut))
+
+    waste = float(bar.get("waste_mm", 0) or 0)
+    if waste > 0:
+        parts.append(f" | ODPAD {format_mm(waste)} |")
+    else:
+        parts.append(" |")
+
+    return "".join(parts), warnings, oriented
 
 
 def _apply_cutting_theme(root: tk.Misc) -> None:
@@ -1035,24 +1164,32 @@ class CuttingFrame(ttk.Frame):
             source = str(bar.get("source", "") or "").strip()
             bar_length = float(bar.get("bar_length_mm", 0) or 0)
             waste = float(bar.get("waste_mm", 0) or 0)
-            cuts = bar.get("cuts", []) or []
+            map_text, map_warnings, oriented_cuts = _operator_bar_map_text(bar)
 
             lines.append("")
             lines.append(
                 f"SZTANGA {bar_no}: {material} | {format_mm(bar_length)} | źródło: {source or '-'}"
             )
+            lines.append(f"MAPA: {map_text}")
+            if map_warnings:
+                lines.append("UWAGA: !!! oznacza niezgodne kąty sąsiednich detali — nie robić jako jedno wspólne cięcie.")
+                for warning in map_warnings:
+                    lines.append(f"  - {warning}")
             lines.append("-" * 72)
 
-            for local_step, cut in enumerate(cuts, start=1):
+            source_cuts = bar.get("cuts", []) or []
+            for local_step, cut in enumerate(source_cuts, start=1):
                 length_mm = float(cut.get("length_mm", 0) or 0)
                 angle_l = float(cut.get("angle_left", 0) or 0)
                 angle_r = float(cut.get("angle_right", 0) or 0)
                 label = str(cut.get("label", "") or "").strip()
                 shape = _operator_cut_shape(angle_l, angle_r)
+                oriented = oriented_cuts[local_step - 1] if local_step - 1 < len(oriented_cuts) else cut
+                flip_note = " | OBRÓĆ DETAL NA MAPIE" if oriented.get("_operator_flipped") else ""
                 label_txt = f" | {label}" if label else ""
                 lines.append(
                     f"{local_step:>2}. {length_mm:g} mm   {shape:<5}   "
-                    f"{angle_l:g}° / {angle_r:g}°{label_txt}"
+                    f"{angle_l:g}° / {angle_r:g}°{flip_note}{label_txt}"
                 )
 
             lines.append(f"ODPAD: {format_mm(waste)}")
