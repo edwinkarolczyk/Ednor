@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.5 - stabilna lista materiałów
+# Wersja: 0.9.6 - zakładki UI / etap 9.5
 from __future__ import annotations
 
 import csv
@@ -200,6 +200,23 @@ def _apply_cutting_theme(root: tk.Misc) -> None:
         insertcolor=TEXT,
         bordercolor=GRID,
     )
+    style.configure(
+        "Cut.TNotebook",
+        background=DARK_BG,
+        borderwidth=0,
+    )
+    style.configure(
+        "Cut.TNotebook.Tab",
+        background=PANEL_2,
+        foreground=TEXT,
+        padding=(16, 8),
+        font=("Segoe UI", 10, "bold"),
+    )
+    style.map(
+        "Cut.TNotebook.Tab",
+        background=[("selected", RED), ("active", PANEL_BG)],
+        foreground=[("selected", TEXT), ("active", TEXT)],
+    )
 
 
 class CuttingFrame(ttk.Frame):
@@ -274,7 +291,26 @@ class CuttingFrame(ttk.Frame):
 
         ttk.Button(header, text="Ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right")
 
-        main = ttk.Panedwindow(self, orient="horizontal")
+        self.tabs = ttk.Notebook(self, style="Cut.TNotebook")
+        self.tabs.pack(fill="both", expand=True)
+
+        tab_start = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_cutting = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_materials = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_stock = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_transports = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+        tab_settings = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
+
+        self.tabs.add(tab_start, text="Start")
+        self.tabs.add(tab_cutting, text="Rozkrój")
+        self.tabs.add(tab_materials, text="Surowce")
+        self.tabs.add(tab_stock, text="Magazyn")
+        self.tabs.add(tab_transports, text="Transporty")
+        self.tabs.add(tab_settings, text="Ustawienia")
+
+        self._build_start_tab(tab_start)
+
+        main = ttk.Panedwindow(tab_cutting, orient="horizontal")
         main.pack(fill="both", expand=True)
 
         left = ttk.Frame(main, padding=(0, 0, 10, 0), style="Cut.TFrame")
@@ -282,11 +318,192 @@ class CuttingFrame(ttk.Frame):
         main.add(left, weight=2)
         main.add(right, weight=3)
 
-        self._build_materials(left)
         self._build_cut_list(left)
         self._build_calculations(left)
         self._build_result_and_preview(right)
+
+        self._build_materials(tab_materials)
+        self._build_stock_tab(tab_stock)
+        self._build_transports_tab(tab_transports)
+        self._build_settings_tab(tab_settings)
         self._build_footer()
+
+    def _select_tab_by_text(self, text: str) -> None:
+        if not hasattr(self, "tabs"):
+            return
+        for tab_id in self.tabs.tabs():
+            if self.tabs.tab(tab_id, "text") == text:
+                self.tabs.select(tab_id)
+                return
+
+    def _build_start_tab(self, parent) -> None:
+        box = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        box.pack(fill="both", expand=True, padx=0, pady=0)
+
+        ttk.Label(
+            box,
+            text="EDNOR — pulpit",
+            style="Cut.Title.TLabel",
+        ).pack(anchor="w", padx=14, pady=(14, 4))
+
+        ttk.Label(
+            box,
+            text="Szybki start programu. Dane dalej są portable w folderze Ednor_data obok programu.",
+            style="Cut.Muted.TLabel",
+        ).pack(anchor="w", padx=14, pady=(0, 14))
+
+        actions = ttk.Frame(box, style="Cut.Panel.TFrame")
+        actions.pack(anchor="w", padx=14, pady=8)
+
+        ttk.Button(
+            actions,
+            text="Nowe cięcie / Rozkrój",
+            command=lambda: self._select_tab_by_text("Rozkrój"),
+            style="Cut.Red.TButton",
+        ).grid(row=0, column=0, padx=6, pady=6, sticky="ew")
+
+        ttk.Button(
+            actions,
+            text="Dodaj transport",
+            command=lambda: (self._select_tab_by_text("Transporty"), self._add_transport_dialog()),
+            style="Cut.Red.TButton",
+        ).grid(row=0, column=1, padx=6, pady=6, sticky="ew")
+
+        ttk.Button(
+            actions,
+            text="Dodaj surowiec",
+            command=lambda: (self._select_tab_by_text("Surowce"), self._add_material_dialog()),
+            style="Cut.TButton",
+        ).grid(row=1, column=0, padx=6, pady=6, sticky="ew")
+
+        ttk.Button(
+            actions,
+            text="Magazyn",
+            command=lambda: self._select_tab_by_text("Magazyn"),
+            style="Cut.TButton",
+        ).grid(row=1, column=1, padx=6, pady=6, sticky="ew")
+
+        ttk.Button(
+            actions,
+            text="Ustawienia / ścieżki",
+            command=lambda: self._select_tab_by_text("Ustawienia"),
+            style="Cut.TButton",
+        ).grid(row=2, column=0, padx=6, pady=6, sticky="ew")
+
+        ttk.Button(
+            actions,
+            text="Pokaż ścieżki danych",
+            command=self._show_paths,
+            style="Cut.TButton",
+        ).grid(row=2, column=1, padx=6, pady=6, sticky="ew")
+
+        for col in (0, 1):
+            actions.columnconfigure(col, weight=1)
+
+        info = tk.Text(
+            box,
+            height=9,
+            bg="#0D0D11",
+            fg=MUTED,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+        )
+        info.pack(fill="x", padx=14, pady=(16, 14))
+        info.insert(
+            "1.0",
+            "Układ roboczy:\n"
+            "  • Rozkrój — lista cięcia, wynik, podgląd, karta operatora\n"
+            "  • Surowce — definicje profili/rur/prętów/płaskowników\n"
+            "  • Magazyn — stan, odpady, później wartość i FIFO\n"
+            "  • Transporty — przyjęcia materiału, cena/mb, dostawca\n"
+            "  • Ustawienia — VAT/netto/brutto, ścieżki portable, parametry\n",
+        )
+        info.configure(state="disabled")
+
+    def _build_stock_tab(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(0, 10))
+        ttk.Label(top, text="Magazyn", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+        ttk.Button(top, text="+ DODAJ STAN", command=self._add_stock_dialog, style="Cut.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="+ DODAJ ODPAD", command=self._add_remnant_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
+        ttk.Button(top, text="Odśwież", command=lambda: (self._refresh_materials(), self._refresh_stock_info()), style="Cut.TButton").pack(side="right")
+
+        msg = tk.Text(
+            parent,
+            height=12,
+            bg="#0D0D11",
+            fg=MUTED,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+        )
+        msg.pack(fill="both", expand=True)
+        msg.insert(
+            "1.0",
+            "Magazyn v1:\n"
+            "  • stan materiałów jest widoczny przy surowcach oraz w stopce programu,\n"
+            "  • + DODAJ STAN i + DODAJ ODPAD działają jeszcze jako szybkie akcje,\n"
+            "  • w etapie 9 właściwym dojdzie FIFO, wartość magazynu i zdejmowanie po transportach.\n",
+        )
+        msg.configure(state="disabled")
+
+    def _build_transports_tab(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(0, 10))
+        ttk.Label(top, text="Transporty", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+        ttk.Button(top, text="+ DODAJ TRANSPORT", command=self._add_transport_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+
+        msg = tk.Text(
+            parent,
+            height=12,
+            bg="#0D0D11",
+            fg=MUTED,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+        )
+        msg.pack(fill="both", expand=True)
+        msg.insert(
+            "1.0",
+            "Transporty v1:\n"
+            "  • jeden transport może mieć wiele pozycji,\n"
+            "  • każda pozycja ma własną cenę za metr,\n"
+            "  • transport zapisuje się w Ednor_data/transporty/transports.json,\n"
+            "  • po zapisie sztangi trafiają do magazynu.\n\n"
+            "Historia transportów jako tabela dojdzie w kolejnym etapie UI.\n",
+        )
+        msg.configure(state="disabled")
+
+    def _build_settings_tab(self, parent) -> None:
+        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
+        top.pack(fill="x", pady=(0, 10))
+        ttk.Label(top, text="Ustawienia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
+        ttk.Button(top, text="Pokaż ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right", padx=(6, 8))
+
+        msg = tk.Text(
+            parent,
+            height=12,
+            bg="#0D0D11",
+            fg=MUTED,
+            insertbackground=TEXT,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+        )
+        msg.pack(fill="both", expand=True)
+        msg.insert(
+            "1.0",
+            "Ustawienia v1:\n"
+            "  • dane programu są portable w Ednor_data obok EXE/projektu,\n"
+            "  • tryb ceny netto/brutto i VAT zapisują się z dialogu transportu,\n"
+            "  • rzaz, min. odpad i strategia zostają na razie w nagłówku rozkroju.\n\n"
+            "Docelowo tutaj trafi osobny formularz ustawień.\n",
+        )
+        msg.configure(state="disabled")
 
     def _panel_title(self, parent, text: str) -> None:
         box = ttk.Frame(parent, style="Cut.Panel.TFrame")
