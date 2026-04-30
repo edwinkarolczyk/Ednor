@@ -1,5 +1,5 @@
 @echo off
-setlocal
 cd /d "%~dp0"
-start "" /b pythonw "%~dp0gui_cutting.py"
-endlocal
+echo Uruchamiam Ednor...
+py gui_cutting.py
+pause
