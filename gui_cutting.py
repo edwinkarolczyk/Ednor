@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.3 - fix checklisty i skalowania karty operatora
+# Wersja: 1.1.4 - HARD FIX checklisty (klik + doubleclick + refresh)
 from __future__ import annotations
 
 import csv
@@ -3166,8 +3166,10 @@ class _OperatorChecklistWindow:
         tree_scroll_x.grid(row=1, column=0, sticky="ew")
         for col, lbl in {"done":"Ucięte","bar":"Sztanga","cut":"Nr","material":"Surowiec","length":"Długość","shape":"Kształt","angles":"Kąty","label":"Opis"}.items():
             self.tree.heading(col, text=lbl)
+        # 🔥 NOWE - pewne sterowanie
+        self.tree.bind("<ButtonRelease-1>", self._on_tree_click)
         self.tree.bind("<Double-1>", self._on_tree_double_click)
-        self.tree.bind("<space>", lambda _e: self._toggle_selected())
+        self.tree.bind("<space>", self._on_space_toggle)
         hint = ttk.Label(
             list_frame,
             text="Uwaga: checklista nie zdejmuje materiału z magazynu. Magazyn schodzi dopiero przez AKCEPTUJ.",
@@ -3215,43 +3217,54 @@ class _OperatorChecklistWindow:
         self.txt_map.insert("1.0", "\n".join(lines) if lines else "Brak danych. Najpierw oblicz rozkrój.")
         self.txt_map.configure(state="disabled")
 
-    def _on_tree_double_click(self, event) -> None:
-        """Dwuklik ma działać na wierszu pod kursorem, nie tylko na aktualnej selekcji."""
+    # ==========================================
+    # 🔥 HARD FIX - klik działa zawsze
+    # ==========================================
+    def _on_tree_click(self, event):
+        row_id = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+
+        if not row_id:
+            return
+
+        # klik tylko w kolumnę "Ucięte"
+        if col == "#1":
+            self._toggle_key(row_id)
+            return "break"
+
+    def _on_tree_double_click(self, event):
         row_id = self.tree.identify_row(event.y)
         if not row_id:
             return
-        try:
-            self.tree.selection_set(row_id)
-            self.tree.focus(row_id)
-        except Exception:
-            pass
-        self._toggle_selected()
+
+        self._toggle_key(row_id)
         return "break"
 
+    def _on_space_toggle(self, event):
+        keys = self._selected_keys()
+        for key in keys:
+            self._toggle_key(key)
+        return "break"
+
+    def _selected_keys(self) -> List[str]:
+        return [str(iid) for iid in self.tree.selection()]
+
+    def _toggle_key(self, key: str):
+        current = bool(self.progress.get(key))
+        self.progress[key] = not current
+        self._save()
+        self._refresh()
+
+    def _save(self) -> None:
+        self.parent._last_result_dict = self.result
+        self.parent._save_operator_progress()
+
     def _toggle_selected(self) -> None:
-        keys = [str(iid) for iid in self.tree.selection()]
+        keys = self._selected_keys()
         if not keys:
             return
         for key in keys:
-            self.progress[key] = not bool(self.progress.get(key))
-        self.parent._last_result_dict = self.result
-        self.parent._save_operator_progress()
-        self._refresh_progress_only(keys)
-        self.parent._render_operator_card(self.result)
-
-    def _refresh_progress_only(self, keys: List[str]) -> None:
-        total = len(list(self._iter_cuts()))
-        done = 0
-        for key in keys:
-            if self.tree.exists(key):
-                done_now = bool(self.progress.get(key))
-                values = list(self.tree.item(key, "values"))
-                if values:
-                    values[0] = "☑" if done_now else "☐"
-                self.tree.item(key, values=values, tags=("done" if done_now else "todo",))
-        for key in self.progress:
-            done += 1 if bool(self.progress.get(key)) else 0
-        self.lbl_progress.configure(text=f"Postęp: {done} / {total} ucięte")
+            self._toggle_key(key)
 
 
 class _CutRowDialog:
