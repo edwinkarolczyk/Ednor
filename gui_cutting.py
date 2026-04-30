@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.6 - zakładki UI / etap 9.5
+# Wersja: 0.9.7 - magazyn tabela / etap 10
 from __future__ import annotations
 
 import csv
@@ -20,6 +20,7 @@ from core.cutting_storage import (
     load_cutting_settings,
     load_materials,
     material_label,
+    load_cutting_stock_raw,
     load_stock_bars,
     save_cutting_calculation,
     save_cut_result,
@@ -66,6 +67,7 @@ MAT_COLUMNS = ("display",)
 CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
 RESULT_COLUMNS = ("bar", "source", "cuts", "waste", "usage")
 CALC_COLUMNS = ("id", "created", "status", "job", "bars", "usage")
+STOCK_COLUMNS = ("kind", "material", "length", "qty", "total_mb", "price", "value", "transport", "location")
 
 DARK_BG = "#08080A"
 PANEL_BG = "#121217"
@@ -428,27 +430,156 @@ class CuttingFrame(ttk.Frame):
         ttk.Label(top, text="Magazyn", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
         ttk.Button(top, text="+ DODAJ STAN", command=self._add_stock_dialog, style="Cut.TButton").pack(side="right", padx=(6, 8))
         ttk.Button(top, text="+ DODAJ ODPAD", command=self._add_remnant_dialog, style="Cut.TButton").pack(side="right", padx=(6, 6))
-        ttk.Button(top, text="Odśwież", command=lambda: (self._refresh_materials(), self._refresh_stock_info()), style="Cut.TButton").pack(side="right")
+        ttk.Button(
+            top,
+            text="Odśwież",
+            command=lambda: (self._refresh_materials(), self._refresh_stock_info(), self._refresh_stock_table_if_exists()),
+            style="Cut.TButton",
+        ).pack(side="right")
 
-        msg = tk.Text(
+        self.lbl_stock_summary = ttk.Label(
             parent,
-            height=12,
-            bg="#0D0D11",
-            fg=MUTED,
-            insertbackground=TEXT,
-            relief="flat",
-            wrap="word",
-            font=("Consolas", 10),
+            text="Stan magazynu: -",
+            style="Cut.Title.TLabel",
         )
-        msg.pack(fill="both", expand=True)
-        msg.insert(
-            "1.0",
-            "Magazyn v1:\n"
-            "  • stan materiałów jest widoczny przy surowcach oraz w stopce programu,\n"
-            "  • + DODAJ STAN i + DODAJ ODPAD działają jeszcze jako szybkie akcje,\n"
-            "  • w etapie 9 właściwym dojdzie FIFO, wartość magazynu i zdejmowanie po transportach.\n",
+        self.lbl_stock_summary.pack(fill="x", pady=(0, 8))
+
+        self.tree_stock = ttk.Treeview(
+            parent,
+            columns=STOCK_COLUMNS,
+            show="headings",
+            selectmode="browse",
+            height=18,
+            style="Cut.Treeview",
         )
-        msg.configure(state="disabled")
+        self.tree_stock.pack(fill="both", expand=True)
+
+        labels = {
+            "kind": "Typ",
+            "material": "Surowiec",
+            "length": "Długość",
+            "qty": "Ilość",
+            "total_mb": "Razem mb",
+            "price": "Cena/mb",
+            "value": "Wartość N/B",
+            "transport": "Transport / linia",
+            "location": "Lokalizacja",
+        }
+        widths = {
+            "kind": 80,
+            "material": 220,
+            "length": 95,
+            "qty": 65,
+            "total_mb": 90,
+            "price": 90,
+            "value": 130,
+            "transport": 160,
+            "location": 120,
+        }
+        for col in STOCK_COLUMNS:
+            self.tree_stock.heading(col, text=labels[col])
+            self.tree_stock.column(col, width=widths[col], anchor="w")
+
+        self.tree_stock.tag_configure("bar", foreground=TEXT)
+        self.tree_stock.tag_configure("offcut", foreground=YELLOW)
+
+    def _stock_material_name(self, material_id: str) -> str:
+        material_id = str(material_id or "").strip()
+        for row in getattr(self, "_materials", []):
+            if str(row.get("material_id", "")).strip() == material_id:
+                return str(row.get("display_name") or row.get("nazwa") or material_id)
+        return material_id
+
+    def _stock_row_values(self, row: Dict[str, Any], kind: str) -> tuple:
+        material_id = str(row.get("material_id", "") or "").strip()
+        length_mm = float(row.get("length_mm", 0) or 0)
+        qty = int(row.get("qty", 0) or 0)
+        total_mb = (length_mm * qty) / 1000.0
+        price_per_m = float(row.get("price_per_m", 0) or 0)
+        vat_percent = float(row.get("vat_percent", 0) or 0)
+        price_mode = str(row.get("price_mode", "") or "").strip().lower()
+
+        value = round(total_mb * price_per_m, 2)
+        vat_mul = 1.0 + vat_percent / 100.0
+        if price_mode == "brutto":
+            gross = value
+            net = round(value / vat_mul, 2) if vat_mul else value
+        else:
+            net = value
+            gross = round(value * vat_mul, 2)
+
+        transport_id = str(row.get("transport_id", "") or "").strip()
+        line_id = str(row.get("line_id", "") or "").strip()
+        transport_txt = " / ".join(part for part in (transport_id, line_id) if part) or "-"
+
+        return (
+            "Odpad" if kind == "offcut" else "Sztanga",
+            self._stock_material_name(material_id),
+            f"{length_mm:g} mm",
+            str(qty),
+            f"{total_mb:g}",
+            f"{price_per_m:.2f} {price_mode or ''}".strip(),
+            f"{net:.2f} / {gross:.2f}",
+            transport_txt,
+            str(row.get("location", "") or "-"),
+        )
+
+    def _refresh_stock_table(self) -> None:
+        if not hasattr(self, "tree_stock"):
+            return
+
+        for iid in self.tree_stock.get_children():
+            self.tree_stock.delete(iid)
+
+        stock = load_cutting_stock_raw()
+        total_mb = 0.0
+        total_net = 0.0
+        total_gross = 0.0
+
+        def _calc_value(row: Dict[str, Any]) -> tuple[float, float, float]:
+            length_mm = float(row.get("length_mm", 0) or 0)
+            qty = int(row.get("qty", 0) or 0)
+            mb = (length_mm * qty) / 1000.0
+            price = float(row.get("price_per_m", 0) or 0)
+            vat = float(row.get("vat_percent", 0) or 0)
+            mode = str(row.get("price_mode", "") or "").strip().lower()
+            value = round(mb * price, 2)
+            vat_mul = 1.0 + vat / 100.0
+            if mode == "brutto":
+                gross = value
+                net = round(value / vat_mul, 2) if vat_mul else value
+            else:
+                net = value
+                gross = round(value * vat_mul, 2)
+            return mb, net, gross
+
+        for kind, bucket_name in (("bar", "bars"), ("offcut", "offs")):
+            rows = stock.get(bucket_name, [])
+            if not isinstance(rows, list):
+                continue
+            for idx, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    continue
+                qty = int(row.get("qty", 0) or 0)
+                if qty <= 0:
+                    continue
+                mb, net, gross = _calc_value(row)
+                total_mb += mb
+                total_net += net
+                total_gross += gross
+                iid = str(row.get("id") or f"{bucket_name}_{idx}")
+                self.tree_stock.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    values=self._stock_row_values(row, kind),
+                    tags=(kind,),
+                )
+
+        if hasattr(self, "lbl_stock_summary"):
+            self.lbl_stock_summary.configure(
+                text=f"Stan magazynu: {total_mb:g} mb | wartość netto {total_net:.2f} zł | brutto {total_gross:.2f} zł"
+            )
 
     def _build_transports_tab(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
@@ -543,6 +674,7 @@ class CuttingFrame(ttk.Frame):
             for m in self._materials:
                 display_label = material_label(m)
                 self.tree_materials.insert("", "end", iid=m["material_id"], values=(display_label,))
+        self._refresh_stock_table_if_exists()
 
 
     def _add_stock_dialog(self):
