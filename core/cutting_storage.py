@@ -91,6 +91,10 @@ def _stamp_id(prefix: str) -> str:
     return f"{prefix}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
 
+def _unique_row_id(prefix: str, material_id: str, length_mm: float) -> str:
+    return f"{prefix}_{_slugify_material(material_id)}_{int(float(length_mm or 0))}_{time.time_ns()}"
+
+
 def _ensure_parent(path: str) -> None:
     parent = os.path.dirname(path)
     if parent:
@@ -534,7 +538,7 @@ def add_stock_bar(
     if qty <= 0:
         raise ValueError("ilość musi być > 0")
 
-    row_id = f"{material_id}_{int(length_mm)}_{int(time.time())}"
+    row_id = _unique_row_id("bar", material_id, length_mm)
     data["bars"].append(
         {
             "id": row_id,
@@ -584,7 +588,7 @@ def add_remnant(
         raise ValueError("długość odpadu musi być > 0")
     if qty <= 0:
         raise ValueError("ilość musi być > 0")
-    row_id = f"off_{material_id}_{int(length_mm)}_{int(time.time())}"
+    row_id = _unique_row_id("off", material_id, length_mm)
     data["offs"].append(
         {
             "id": row_id,
@@ -713,7 +717,7 @@ def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
         # Odpad po cięciu wraca do magazynu jako offcut i dziedziczy cenę/transport.
         waste_mm = float(used_bar.get("waste_mm", 0) or 0)
         if waste_mm > 0.001:
-            off_id = f"off_{material_id}_{int(waste_mm)}_{int(time.time())}"
+            off_id = _unique_row_id("off", material_id, waste_mm)
             offcut = {
                 "id": off_id,
                 "created_at": _now_iso(),
