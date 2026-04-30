@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 0.9.8 - fix magazyn duplicate iid
+# Wersja: 0.10.0 - transporty, akceptacja, raport HTML
 from __future__ import annotations
 
 import csv
@@ -33,6 +33,7 @@ from core.cutting_storage import (
     material_size_from_dims,
     save_transport,
     next_transport_id,
+    load_transports_raw,
 )
 from core.cutting_units import (
     clamp_saw_angle,
@@ -68,6 +69,8 @@ CUT_COLUMNS = ("material", "length", "angle_l", "angle_r", "qty", "label")
 RESULT_COLUMNS = ("bar", "source", "cuts", "waste", "usage")
 CALC_COLUMNS = ("id", "created", "status", "job", "bars", "usage")
 STOCK_COLUMNS = ("kind", "material", "length", "qty", "total_mb", "price", "value", "transport", "location")
+TRANSPORT_COLUMNS = ("id", "created", "supplier", "lines", "mb", "net", "gross", "cost")
+TRANSPORT_LINE_COLUMNS = ("material", "length", "qty", "mb", "price", "value")
 
 DARK_BG = "#08080A"
 PANEL_BG = "#121217"
@@ -586,28 +589,160 @@ class CuttingFrame(ttk.Frame):
         top.pack(fill="x", pady=(0, 10))
         ttk.Label(top, text="Transporty", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
         ttk.Button(top, text="+ DODAJ TRANSPORT", command=self._add_transport_dialog, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(top, text="Odśwież", command=self._refresh_transports_table, style="Cut.TButton").pack(side="right", padx=(6, 6))
 
-        msg = tk.Text(
+        self.tree_transports = ttk.Treeview(
             parent,
-            height=12,
-            bg="#0D0D11",
-            fg=MUTED,
-            insertbackground=TEXT,
-            relief="flat",
-            wrap="word",
-            font=("Consolas", 10),
+            columns=TRANSPORT_COLUMNS,
+            show="headings",
+            selectmode="browse",
+            height=10,
+            style="Cut.Treeview",
         )
-        msg.pack(fill="both", expand=True)
-        msg.insert(
-            "1.0",
-            "Transporty v1:\n"
-            "  • jeden transport może mieć wiele pozycji,\n"
-            "  • każda pozycja ma własną cenę za metr,\n"
-            "  • transport zapisuje się w Ednor_data/transporty/transports.json,\n"
-            "  • po zapisie sztangi trafiają do magazynu.\n\n"
-            "Historia transportów jako tabela dojdzie w kolejnym etapie UI.\n",
+        self.tree_transports.pack(fill="both", expand=True, pady=(0, 10))
+
+        transport_labels = {
+            "id": "Nr",
+            "created": "Data",
+            "supplier": "Firma",
+            "lines": "Pozycji",
+            "mb": "Razem mb",
+            "net": "Netto",
+            "gross": "Brutto",
+            "cost": "Transport",
+        }
+        transport_widths = {
+            "id": 110,
+            "created": 145,
+            "supplier": 180,
+            "lines": 70,
+            "mb": 90,
+            "net": 90,
+            "gross": 90,
+            "cost": 90,
+        }
+        for col in TRANSPORT_COLUMNS:
+            self.tree_transports.heading(col, text=transport_labels[col])
+            self.tree_transports.column(col, width=transport_widths[col], anchor="w")
+
+        ttk.Label(parent, text="Pozycje transportu", style="Cut.Subtitle.TLabel").pack(anchor="w", pady=(4, 6))
+
+        self.tree_transport_lines = ttk.Treeview(
+            parent,
+            columns=TRANSPORT_LINE_COLUMNS,
+            show="headings",
+            selectmode="browse",
+            height=8,
+            style="Cut.Treeview",
         )
-        msg.configure(state="disabled")
+        self.tree_transport_lines.pack(fill="both", expand=True)
+
+        line_labels = {
+            "material": "Surowiec",
+            "length": "Sztanga",
+            "qty": "Ilość",
+            "mb": "Razem mb",
+            "price": "Cena/mb",
+            "value": "Netto / Brutto",
+        }
+        line_widths = {
+            "material": 260,
+            "length": 90,
+            "qty": 70,
+            "mb": 90,
+            "price": 90,
+            "value": 130,
+        }
+        for col in TRANSPORT_LINE_COLUMNS:
+            self.tree_transport_lines.heading(col, text=line_labels[col])
+            self.tree_transport_lines.column(col, width=line_widths[col], anchor="w")
+
+        self.tree_transports.bind("<<TreeviewSelect>>", lambda _e: self._on_transport_selected())
+        self._refresh_transports_table()
+
+    def _refresh_transports_table(self) -> None:
+        if not hasattr(self, "tree_transports"):
+            return
+        for iid in self.tree_transports.get_children():
+            self.tree_transports.delete(iid)
+        if hasattr(self, "tree_transport_lines"):
+            for iid in self.tree_transport_lines.get_children():
+                self.tree_transport_lines.delete(iid)
+
+        data = load_transports_raw()
+        transports = data.get("transports", [])
+        if not isinstance(transports, list):
+            transports = []
+        for idx, transport in enumerate(reversed(transports)):
+            if not isinstance(transport, dict):
+                continue
+            tid = str(transport.get("transport_id", f"TR-{idx:06d}"))
+            lines = transport.get("lines", [])
+            if not isinstance(lines, list):
+                lines = []
+            total_mb = 0.0
+            total_net = 0.0
+            total_gross = 0.0
+            for line in lines:
+                if not isinstance(line, dict):
+                    continue
+                total_mb += float(line.get("total_length_m", line.get("total_length_mm", 0) / 1000.0) or 0)
+                total_net += float(line.get("line_total_net", 0) or 0)
+                total_gross += float(line.get("line_total_gross", 0) or 0)
+            iid = f"transport_{idx}_{tid}"
+            self.tree_transports.insert(
+                "",
+                "end",
+                iid=iid,
+                values=(
+                    tid,
+                    str(transport.get("created_at", "")),
+                    str(transport.get("supplier", "") or "-"),
+                    str(len(lines)),
+                    f"{total_mb:g}",
+                    f"{total_net:.2f}",
+                    f"{total_gross:.2f}",
+                    f"{float(transport.get('transport_cost', 0) or 0):.2f}",
+                ),
+                tags=(tid,),
+            )
+
+    def _on_transport_selected(self) -> None:
+        if not hasattr(self, "tree_transports") or not hasattr(self, "tree_transport_lines"):
+            return
+        for iid in self.tree_transport_lines.get_children():
+            self.tree_transport_lines.delete(iid)
+        sel = self.tree_transports.selection()
+        if not sel:
+            return
+        values = self.tree_transports.item(sel[0], "values")
+        if not values:
+            return
+        selected_tid = str(values[0])
+        data = load_transports_raw()
+        for transport in data.get("transports", []):
+            if str(transport.get("transport_id", "")) != selected_tid:
+                continue
+            for idx, line in enumerate(transport.get("lines", []) or []):
+                if not isinstance(line, dict):
+                    continue
+                length = float(line.get("bar_length_mm", 0) or 0)
+                qty = int(line.get("qty", 0) or 0)
+                total_m = float(line.get("total_length_m", (length * qty) / 1000.0) or 0)
+                self.tree_transport_lines.insert(
+                    "",
+                    "end",
+                    iid=f"{selected_tid}_line_{idx}",
+                    values=(
+                        str(line.get("material_display") or line.get("material_id") or "-"),
+                        f"{length:g} mm",
+                        str(qty),
+                        f"{total_m:g}",
+                        f"{float(line.get('price_per_m', 0) or 0):.2f}",
+                        f"{float(line.get('line_total_net', 0) or 0):.2f} / {float(line.get('line_total_gross', 0) or 0):.2f}",
+                    ),
+                )
+            break
 
     def _build_settings_tab(self, parent) -> None:
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
@@ -1432,7 +1567,13 @@ class CuttingFrame(ttk.Frame):
         self._refresh_materials()
         self._refresh_stock_info()
         self._refresh_stock_table_if_exists()
+        self._refresh_transports_table_if_exists()
         messagebox.showinfo("Transport", f"Zapisano transport:\n{transport.get('transport_id')}")
+
+    def _refresh_transports_table_if_exists(self) -> None:
+        refresh = getattr(self, "_refresh_transports_table", None)
+        if callable(refresh):
+            refresh()
 
     def _read_cut_items(self) -> List[CutItem]:
         items: List[CutItem] = []
