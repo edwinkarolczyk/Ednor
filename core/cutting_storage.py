@@ -211,6 +211,64 @@ def _material_stock_mm(data: Dict[str, Any], material_id: str) -> float:
     return total
 
 
+def _bar_value(row: Dict[str, Any]) -> Dict[str, float]:
+    """Wartość pozycji magazynowej.
+
+    Cena jest zapisana na rekordzie sztangi/odpadu, bo pochodzi z transportu.
+    Jeśli price_mode == brutto, price_per_m traktujemy jako brutto.
+    Jeśli price_mode == netto, price_per_m traktujemy jako netto.
+    """
+
+    try:
+        length_mm = float(row.get("length_mm", 0) or 0)
+        qty = int(row.get("qty", 0) or 0)
+        price_per_m = float(row.get("price_per_m", 0) or 0)
+        vat_percent = float(row.get("vat_percent", 0) or 0)
+    except Exception:
+        return {"net": 0.0, "gross": 0.0}
+
+    meters = (length_mm * qty) / 1000.0
+    value = round(meters * price_per_m, 2)
+    vat_mul = 1.0 + (vat_percent / 100.0)
+    mode = str(row.get("price_mode", "") or "").strip().lower()
+
+    if mode == "brutto":
+        gross = value
+        net = round(value / vat_mul, 2) if vat_mul else value
+    else:
+        net = value
+        gross = round(value * vat_mul, 2)
+    return {"net": net, "gross": gross}
+
+
+def _material_stock_value(data: Dict[str, Any], material_id: str) -> Dict[str, float]:
+    total_net = 0.0
+    total_gross = 0.0
+    for bucket in ("bars", "offs"):
+        for row in data.get(bucket, []):
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("material_id", "")).strip() != material_id:
+                continue
+            value = _bar_value(row)
+            total_net += value["net"]
+            total_gross += value["gross"]
+    return {"net": round(total_net, 2), "gross": round(total_gross, 2)}
+
+
+def _stock_row_sort_key(row: Dict[str, Any]) -> tuple[str, str]:
+    """FIFO: najpierw najstarszy transport / najstarszy wpis.
+
+    Starsze rekordy mogą nie mieć created_at, więc jako drugi klucz zostaje id.
+    Kolejność listy i tak zostaje zachowana przez enumerate przy wyborze.
+    """
+
+    return (
+        str(row.get("created_at", "") or ""),
+        str(row.get("id", "") or ""),
+    )
+
+
 def get_cutting_stock_path() -> str:
     ensure_data_tree()
     return str(cutting_stock_bars_file())
@@ -313,6 +371,9 @@ def load_materials() -> List[Dict[str, Any]]:
         item = dict(row)
         item["stock_qty"] = _material_stock_qty(stock, material_id)
         item["stock_mb"] = round(_material_stock_mm(stock, material_id) / 1000.0, 3)
+        value = _material_stock_value(stock, material_id)
+        item["stock_value_net"] = value["net"]
+        item["stock_value_gross"] = value["gross"]
         out.append(item)
     return out
 
@@ -458,6 +519,7 @@ def add_stock_bar(
     data["bars"].append(
         {
             "id": row_id,
+            "created_at": _now_iso(),
             "material_id": material_id,
             "name": name or material_id,
             "length_mm": length_mm,
@@ -483,7 +545,16 @@ def log_stock_move(payload: Dict[str, Any]) -> str:
     return str(path)
 
 
-def add_remnant(material_id: str, length_mm: float, qty: int = 1) -> str:
+def add_remnant(
+    material_id: str,
+    length_mm: float,
+    qty: int = 1,
+    transport_id: str = "",
+    line_id: str = "",
+    price_per_m: float = 0.0,
+    price_mode: str = "",
+    vat_percent: float = 0.0,
+) -> str:
     data = load_cutting_stock_raw()
     material_id = str(material_id).strip()
     length_mm = float(length_mm or 0)
@@ -498,11 +569,17 @@ def add_remnant(material_id: str, length_mm: float, qty: int = 1) -> str:
     data["offs"].append(
         {
             "id": row_id,
+            "created_at": _now_iso(),
             "material_id": material_id,
             "name": f"Offcut {material_id}",
             "length_mm": length_mm,
             "qty": qty,
             "location": "odpad",
+            "transport_id": str(transport_id or "").strip(),
+            "line_id": str(line_id or "").strip(),
+            "price_per_m": float(price_per_m or 0),
+            "price_mode": str(price_mode or "").strip(),
+            "vat_percent": float(vat_percent or 0),
         }
     )
     return save_cutting_stock_raw(data)
@@ -511,10 +588,11 @@ def add_remnant(material_id: str, length_mm: float, qty: int = 1) -> str:
 def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
     """Akceptuje kalkulację: zmniejsza stan sztang w magazynie.
 
-    Minimalna wersja rozchodu:
-    - odejmuje 1 sztangę z `bars` dla każdej użytej sztangi typu stock,
-    - nie rozlicza jeszcze dokładnie odpadów użytkowych,
-    - zabezpiecza przed podwójną akceptacją po `accepted_at`.
+    Etap 9:
+    - FIFO: najstarszy transport / wpis schodzi pierwszy,
+    - rozchód zapisuje transport_id, line_id, cenę i VAT,
+    - odpad po cięciu trafia do `offs` i dziedziczy transport/cenę,
+    - wynik dostaje koszt materiału netto/brutto.
     """
 
     if not isinstance(result, dict):
@@ -524,45 +602,155 @@ def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
 
     stock = load_cutting_stock_raw()
     bars = stock.get("bars", [])
+    offs = stock.get("offs", [])
     if not isinstance(bars, list):
         bars = []
+    if not isinstance(offs, list):
+        offs = []
 
     used = result.get("bars_used", [])
     if not isinstance(used, list):
         used = []
 
     errors: List[str] = []
-    for used_bar in used:
-        if not isinstance(used_bar, dict):
-            continue
-        if used_bar.get("source") != "stock":
-            continue
-        material_id = str(used_bar.get("material_id", "")).strip()
-        length = float(used_bar.get("bar_length_mm", 0) or 0)
-        if not material_id or length <= 0:
-            continue
+    deductions: List[Dict[str, Any]] = []
+    created_offcuts: List[Dict[str, Any]] = []
+    total_cost_net = 0.0
+    total_cost_gross = 0.0
 
-        deducted = False
-        for row in bars:
+    def _pick_fifo_row(bucket_rows: List[Dict[str, Any]], material_id: str, length: float) -> tuple[int, Dict[str, Any]] | tuple[None, None]:
+        candidates: List[tuple[int, Dict[str, Any]]] = []
+        for idx, row in enumerate(bucket_rows):
             if not isinstance(row, dict):
                 continue
             row_mid = str(row.get("material_id", "")).strip()
             row_len = float(row.get("length_mm", row.get("dlugosc_mm", 0)) or 0)
             row_qty = int(row.get("qty", row.get("ilosc", 0)) or 0)
             if row_mid == material_id and abs(row_len - length) < 0.001 and row_qty > 0:
-                row["qty"] = row_qty - 1
-                deducted = True
-                break
-        if not deducted:
+                candidates.append((idx, row))
+        if not candidates:
+            return None, None
+        candidates.sort(key=lambda item: (_stock_row_sort_key(item[1]), item[0]))
+        return candidates[0]
+
+    def _one_piece_value(row: Dict[str, Any], length_mm: float) -> Dict[str, float]:
+        one = dict(row)
+        one["length_mm"] = length_mm
+        one["qty"] = 1
+        return _bar_value(one)
+
+    for used_bar in used:
+        if not isinstance(used_bar, dict):
+            continue
+
+        source = str(used_bar.get("source", "stock") or "stock").strip()
+        material_id = str(used_bar.get("material_id", "")).strip()
+        length = float(used_bar.get("bar_length_mm", 0) or 0)
+        if not material_id or length <= 0:
+            continue
+
+        bucket_name = "offs" if source in ("offcut", "offs", "odpad") else "bars"
+        bucket = offs if bucket_name == "offs" else bars
+        idx, row = _pick_fifo_row(bucket, material_id, length)
+
+        if row is None:
             errors.append(f"{material_id} / {length:g} mm")
+            continue
+
+        row_qty = int(row.get("qty", row.get("ilosc", 0)) or 0)
+        row["qty"] = row_qty - 1
+
+        price_per_m = float(row.get("price_per_m", 0) or 0)
+        price_mode = str(row.get("price_mode", "") or "").strip()
+        vat_percent = float(row.get("vat_percent", 0) or 0)
+        transport_id = str(row.get("transport_id", "") or "").strip()
+        line_id = str(row.get("line_id", "") or "").strip()
+        stock_row_id = str(row.get("id", "") or "").strip()
+        value = _one_piece_value(row, length)
+
+        total_cost_net += value["net"]
+        total_cost_gross += value["gross"]
+
+        deduction = {
+            "type": "stock_out",
+            "job_id": job_id,
+            "material_id": material_id,
+            "source": bucket_name,
+            "stock_row_id": stock_row_id,
+            "transport_id": transport_id,
+            "line_id": line_id,
+            "bar_length_mm": length,
+            "qty": 1,
+            "price_per_m": price_per_m,
+            "price_mode": price_mode,
+            "vat_percent": vat_percent,
+            "cost_net": value["net"],
+            "cost_gross": value["gross"],
+        }
+        deductions.append(deduction)
+
+        log_stock_move(deduction)
+
+        # Odpad po cięciu wraca do magazynu jako offcut i dziedziczy cenę/transport.
+        waste_mm = float(used_bar.get("waste_mm", 0) or 0)
+        if waste_mm > 0.001:
+            off_id = f"off_{material_id}_{int(waste_mm)}_{int(time.time())}"
+            offcut = {
+                "id": off_id,
+                "created_at": _now_iso(),
+                "material_id": material_id,
+                "name": f"Offcut {material_id}",
+                "length_mm": waste_mm,
+                "qty": 1,
+                "location": "odpad",
+                "source_job_id": job_id,
+                "source_stock_row_id": stock_row_id,
+                "transport_id": transport_id,
+                "line_id": line_id,
+                "price_per_m": price_per_m,
+                "price_mode": price_mode,
+                "vat_percent": vat_percent,
+            }
+            offs.append(offcut)
+            created_offcuts.append(offcut)
+            log_stock_move(
+                {
+                    "type": "offcut_add",
+                    "job_id": job_id,
+                    "material_id": material_id,
+                    "source_stock_row_id": stock_row_id,
+                    "transport_id": transport_id,
+                    "line_id": line_id,
+                    "length_mm": waste_mm,
+                    "qty": 1,
+                    "price_per_m": price_per_m,
+                    "price_mode": price_mode,
+                    "vat_percent": vat_percent,
+                }
+            )
 
     if errors:
         raise ValueError("Brak stanu do rozchodu: " + ", ".join(errors))
 
+    # Nie kasujemy rekordów z qty=0 od razu, bo są czytelne w historii pliku.
+    # Widoki i load_stock_bars() i tak pomijają qty <= 0.
     stock["bars"] = bars
+    stock["offs"] = offs
     save_cutting_stock_raw(stock)
     result["accepted_at"] = _now_iso()
     result["status"] = "accepted"
+    result["stock_deductions"] = deductions
+    result["created_offcuts"] = created_offcuts
+    result["material_cost_net"] = round(total_cost_net, 2)
+    result["material_cost_gross"] = round(total_cost_gross, 2)
+
+    summary = result.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    summary["material_cost_net"] = round(total_cost_net, 2)
+    summary["material_cost_gross"] = round(total_cost_gross, 2)
+    result["summary"] = summary
+
     return save_cut_result(job_id, result)
 
 
