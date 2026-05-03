@@ -1,5 +1,5 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.4 - HARD FIX checklisty (klik + doubleclick + refresh)
+# Wersja: 1.1.5 - stabilizacja UI rozkroju i akceptacji magazynu
 from __future__ import annotations
 
 import csv
@@ -416,6 +416,8 @@ class CuttingFrame(ttk.Frame):
         _apply_cutting_theme(master.winfo_toplevel())
         _setup_window_geometry(master.winfo_toplevel())
         super().__init__(master, padding=(12, 12, 12, 12), style="Cut.TFrame")
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
         self.config_obj = config or {}
         self._last_result = None
         self._last_result_dict: Optional[Dict[str, Any]] = None
@@ -476,7 +478,7 @@ class CuttingFrame(ttk.Frame):
         ttk.Button(header, text="Ścieżki", command=self._show_paths, style="Cut.TButton").pack(side="right")
 
         self.tabs = ttk.Notebook(self, style="Cut.TNotebook")
-        self.tabs.pack(fill="both", expand=True)
+        self.tabs.grid(row=1, column=0, sticky="nsew")
 
         tab_start = ttk.Frame(self.tabs, padding=(8, 8, 8, 8), style="Cut.TFrame")
         tab_cutting = ttk.Frame(self.tabs, padding=(10, 10, 10, 10), style="Cut.TFrame")
@@ -504,11 +506,26 @@ class CuttingFrame(ttk.Frame):
 
         left = ttk.Frame(main, padding=(0, 0, 10, 0), style="Cut.TFrame")
         right = ttk.Frame(main, padding=(10, 0, 0, 0), style="Cut.TFrame")
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(0, weight=1)
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
         main.add(left, weight=2)
         main.add(right, weight=3)
 
-        self._build_cut_list(left)
-        self._build_calculations(left)
+        left_split = ttk.Panedwindow(left, orient="vertical")
+        left_split.grid(row=0, column=0, sticky="nsew")
+        left_top = ttk.Frame(left_split, style="Cut.TFrame")
+        left_bottom = ttk.Frame(left_split, style="Cut.TFrame")
+        left_top.columnconfigure(0, weight=1)
+        left_top.rowconfigure(0, weight=1)
+        left_bottom.columnconfigure(0, weight=1)
+        left_bottom.rowconfigure(0, weight=1)
+        left_split.add(left_top, weight=4)
+        left_split.add(left_bottom, weight=1)
+
+        self._build_cut_list(left_top)
+        self._build_calculations(left_bottom)
         self._build_result_and_preview(right)
 
         self._build_materials(tab_materials)
@@ -1372,8 +1389,11 @@ class CuttingFrame(ttk.Frame):
         messagebox.showinfo("Karta operatora", f"Zapisano:\n{path}")
 
     def _build_cut_list(self, parent) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
+
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
-        top.pack(fill="x", pady=(0, 6))
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         ttk.Label(top, text="Lista do cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
         # Przyciski akcji - bardziej przejrzysty układ
@@ -1388,7 +1408,7 @@ class CuttingFrame(ttk.Frame):
 
         # Narzędzia CSV
         tools = ttk.Frame(parent, style="Cut.TFrame")
-        tools.pack(fill="x", pady=(0, 6))
+        tools.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         ttk.Button(tools, text="Import CSV", command=self._import_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
         ttk.Button(tools, text="Eksport CSV", command=self._export_cuts_csv, style="Cut.TButton").pack(side="left", padx=(0, 6))
         ttk.Label(
@@ -1405,7 +1425,7 @@ class CuttingFrame(ttk.Frame):
             height=14,
             style="Cut.Treeview",
         )
-        self.tree_cuts.pack(fill="both", expand=True)
+        self.tree_cuts.grid(row=2, column=0, sticky="nsew")
 
         labels = {
             "material": "Materiał ID",
@@ -1437,7 +1457,7 @@ class CuttingFrame(ttk.Frame):
             wrap="word",
             font=("Consolas", 10),
         )
-        helper.pack(fill="x", pady=(10, 0))
+        helper.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         helper.insert(
             "1.0",
             "Legenda kątów:\n"
@@ -1451,49 +1471,84 @@ class CuttingFrame(ttk.Frame):
         self.tree_cuts.bind("<Double-1>", lambda _e: self._edit_selected_cut())
 
     def _build_result_and_preview(self, parent) -> None:
-        top = ttk.Frame(parent, style="Cut.Panel.TFrame")
-        top.pack(fill="x", pady=(0, 6))
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+
+        right_split = ttk.Panedwindow(parent, orient="vertical")
+        right_split.grid(row=0, column=0, sticky="nsew")
+
+        result_pane = ttk.Frame(right_split, style="Cut.TFrame")
+        preview_pane = ttk.Frame(right_split, style="Cut.TFrame")
+        operator_pane = ttk.Frame(right_split, style="Cut.TFrame")
+        result_pane.columnconfigure(0, weight=1)
+        result_pane.rowconfigure(1, weight=1)
+        preview_pane.columnconfigure(0, weight=1)
+        preview_pane.rowconfigure(1, weight=1)
+        operator_pane.columnconfigure(0, weight=1)
+        operator_pane.rowconfigure(1, weight=1)
+        right_split.add(result_pane, weight=1)
+        right_split.add(preview_pane, weight=2)
+        right_split.add(operator_pane, weight=2)
+
+        top = ttk.Frame(result_pane, style="Cut.Panel.TFrame")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 6))
 
         ttk.Label(top, text="Wynik + podgląd sztang", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
 
         ttk.Button(top, text="OBLICZ", command=self._calculate, style="Cut.Red.TButton").pack(side="right", padx=(6, 8))
+        ttk.Button(
+            top,
+            text="KARTA OPERATORA",
+            command=self._open_operator_checklist_window,
+            style="Cut.Red.TButton",
+        ).pack(side="right", padx=(6, 6))
         ttk.Button(top, text="Zapisz wynik", command=self._save_last_result, style="Cut.TButton").pack(side="right")
 
         self.tree_result = ttk.Treeview(
-            parent,
+            result_pane,
             columns=RESULT_COLUMNS,
             show="headings",
             selectmode="browse",
             height=8,
             style="Cut.Treeview",
         )
-        self.tree_result.pack(fill="x", expand=False)
+        self.tree_result.grid(row=1, column=0, sticky="nsew")
 
         labels = {
             "bar": "Sztanga",
             "source": "Źródło",
-            "cuts": "Cięcia tekstowo",
-            "waste": "Odpad",
-            "usage": "Użycie",
+            "material": "Materiał",
+            "stock": "Długość [mm]",
+            "cuts": "Cięcia [mm]",
+            "used": "Zużyte [mm]",
+            "waste": "Odpad [mm]",
+            "usage": "Wykorzystanie [%]",
         }
         widths = {
-            "bar": 180,
-            "source": 85,
-            "cuts": 520,
-            "waste": 100,
-            "usage": 80,
+            "bar": 80,
+            "source": 80,
+            "material": 120,
+            "stock": 110,
+            "cuts": 300,
+            "used": 110,
+            "waste": 110,
+            "usage": 130,
         }
         for col in RESULT_COLUMNS:
             self.tree_result.heading(col, text=labels[col])
-            self.tree_result.column(col, width=widths[col], anchor="w")
+            anchor = "w" if col in {"material", "cuts"} else "center"
+            self.tree_result.column(col, width=widths[col], anchor=anchor, stretch=(col in {"cuts", "material"}))
+
         self.tree_result.tag_configure("usage_good", foreground=GREEN)
         self.tree_result.tag_configure("usage_mid", foreground=YELLOW)
         self.tree_result.tag_configure("usage_bad", foreground=RED_HOT)
 
-        preview_box = ttk.Frame(parent, style="Cut.Panel.TFrame")
-        preview_box.pack(fill="both", expand=True, pady=(10, 0))
+        preview_box = ttk.Frame(preview_pane, style="Cut.Panel.TFrame")
+        preview_box.grid(row=0, column=0, sticky="nsew")
+        preview_box.columnconfigure(0, weight=1)
+        preview_box.rowconfigure(1, weight=1)
 
-        ttk.Label(preview_box, text="Graficzny podgląd cięcia", style="Cut.Subtitle.TLabel").pack(anchor="w", padx=10, pady=(8, 0))
+        ttk.Label(preview_box, text="Graficzny podgląd cięcia", style="Cut.Subtitle.TLabel").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
 
         self.canvas = tk.Canvas(
             preview_box,
@@ -1501,10 +1556,10 @@ class CuttingFrame(ttk.Frame):
             highlightthickness=1,
             highlightbackground=GRID,
         )
-        self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
 
         self.txt_summary = tk.Text(
-            parent,
+            result_pane,
             height=7,
             bg="#0D0D11",
             fg=TEXT,
@@ -1513,37 +1568,54 @@ class CuttingFrame(ttk.Frame):
             wrap="word",
             font=("Consolas", 10),
         )
-        self.txt_summary.pack(fill="x", pady=(10, 0))
+        self.txt_summary.grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
 
-        operator_box = ttk.Frame(parent, style="Cut.Panel.TFrame")
-        operator_box.pack(fill="both", expand=True, pady=(10, 0))
+        operator_box = ttk.Frame(operator_pane, style="Cut.Panel.TFrame")
+        operator_box.grid(row=0, column=0, sticky="nsew")
+        operator_box.columnconfigure(0, weight=1)
+        operator_box.rowconfigure(1, weight=1)
 
         operator_header = ttk.Frame(operator_box, style="Cut.Panel.TFrame")
-        operator_header.pack(fill="x", padx=10, pady=(8, 0))
+        operator_header.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 0))
+        operator_header.columnconfigure(0, weight=1)
 
         ttk.Label(
             operator_header,
-            text="Karta operatora",
+            text="KARTA OPERATORA / MAPA CIĘCIA",
             style="Cut.Subtitle.TLabel",
-        ).pack(side="left")
+        ).grid(row=0, column=0, sticky="w")
+
+        ttk.Button(
+            operator_header,
+            text="DUŻE OKNO",
+            command=self._open_operator_checklist_window,
+            style="Cut.Red.TButton",
+        ).grid(row=0, column=3, sticky="e", padx=(6, 0))
 
         ttk.Button(
             operator_header,
             text="Eksport karty CSV",
             command=self._export_operator_card_csv,
             style="Cut.TButton",
-        ).pack(side="right", padx=(6, 0))
+        ).grid(row=0, column=2, sticky="e", padx=(6, 0))
 
         ttk.Button(
             operator_header,
             text="Eksport karty HTML",
             command=self._export_operator_card_html,
             style="Cut.TButton",
-        ).pack(side="right", padx=(6, 0))
+        ).grid(row=0, column=1, sticky="e", padx=(6, 0))
+
+        card_box = ttk.Frame(operator_box, style="Cut.TFrame")
+        card_box.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        card_box.columnconfigure(0, weight=1)
+        card_box.rowconfigure(0, weight=1)
+        card_scroll_y = ttk.Scrollbar(card_box, orient="vertical")
+        card_scroll_x = ttk.Scrollbar(card_box, orient="horizontal")
 
         self.txt_operator_card = tk.Text(
-            operator_box,
+            card_box,
             height=12,
             bg="#0D0D11",
             fg=TEXT,
@@ -1551,8 +1623,14 @@ class CuttingFrame(ttk.Frame):
             relief="flat",
             wrap="none",
             font=("Consolas", 12),
+            yscrollcommand=card_scroll_y.set,
+            xscrollcommand=card_scroll_x.set,
         )
-        self.txt_operator_card.pack(fill="both", expand=True, padx=10, pady=10)
+        card_scroll_y.configure(command=self.txt_operator_card.yview)
+        card_scroll_x.configure(command=self.txt_operator_card.xview)
+        self.txt_operator_card.grid(row=0, column=0, sticky="nsew")
+        card_scroll_y.grid(row=0, column=1, sticky="ns")
+        card_scroll_x.grid(row=1, column=0, sticky="ew")
 
     def _on_window_resize(self, _event=None) -> None:
         """Opóźnione przerysowanie preview po zmianie rozmiaru okna."""
@@ -1566,8 +1644,11 @@ class CuttingFrame(ttk.Frame):
             self._draw_preview(self._last_result_dict)
 
     def _build_calculations(self, parent) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+
         top = ttk.Frame(parent, style="Cut.Panel.TFrame")
-        top.pack(fill="x", pady=(10, 6))
+        top.grid(row=0, column=0, sticky="ew", pady=(10, 6))
         ttk.Label(top, text="Lista kalkulacji cięcia", style="Cut.Subtitle.TLabel").pack(side="left", padx=10, pady=8)
         ttk.Button(top, text="Odśwież", command=self._refresh_calculations, style="Cut.TButton").pack(side="right", padx=(6, 8))
         ttk.Button(top, text="Wczytaj", command=self._load_selected_calculation, style="Cut.TButton").pack(side="right")
@@ -1580,7 +1661,7 @@ class CuttingFrame(ttk.Frame):
             height=6,
             style="Cut.Treeview",
         )
-        self.tree_calculations.pack(fill="x", expand=False)
+        self.tree_calculations.grid(row=1, column=0, sticky="nsew")
         labels = {
             "id": "ID",
             "created": "Data",
@@ -2413,25 +2494,8 @@ class CuttingFrame(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Rozkrój", f"Nie udało się zaakceptować kalkulacji:\n{exc}")
             return
-        min_offcut = float(self.var_min_offcut.get())
-        for bar in self._last_result_dict.get("bars_used", []):
-            if not isinstance(bar, dict):
-                continue
-            waste = float(bar.get("waste_mm", 0) or 0)
-            material = str(bar.get("material_id", "")).strip()
-            if not material or waste <= 0:
-                continue
-            if waste >= min_offcut:
-                add_remnant(material, waste)
-            else:
-                log_stock_move(
-                    {
-                        "type": "scrap",
-                        "material_id": material,
-                        "length_mm": waste,
-                    }
-                )
-        messagebox.showinfo("Rozkrój", "Zaktualizowano magazyn + odpady.")
+        messagebox.showinfo("Rozkrój", "Zaakceptowano kalkulację. Magazyn i odpady zaktualizowane przez core.")
+        self._render_result(self._last_result_dict)
         self._refresh_stock_info()
         self._refresh_materials()
         self._refresh_calculations()
