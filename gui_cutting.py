@@ -1,5 +1,8 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.4 - HARD FIX checklisty (klik + doubleclick + refresh)
+# Wersja: 1.1.6
+# Data: 2026-04-30 13:25 UTC
+# Zakres: standard nagłówka wersji z datą i godziną
+# Poprzednio: 1.1.5 - stabilizacja UI rozkroju i akceptacji magazynu
 from __future__ import annotations
 
 import csv
