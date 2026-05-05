@@ -438,7 +438,12 @@ class CuttingFrame(ttk.Frame):
 
     def _build_ui(self) -> None:
         header = ttk.Frame(self, style="Cut.TFrame")
-        header.pack(fill="x", pady=(0, 10))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        header.columnconfigure(0, weight=0)
+
+        # 🔥 ważne — główny layout
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
 
         title_box = ttk.Frame(header, style="Cut.TFrame")
         title_box.pack(side="left", padx=(0, 18))
