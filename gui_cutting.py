@@ -1,5 +1,9 @@
 # Plik: gui_cutting.py
-# Wersja: 1.1.5 - stabilizacja UI rozkroju i akceptacji magazynu
+# Wersja: 1.1.6
+# Data: 2026-05-03 15:55 UTC
+# Zakres: hotfix pack/grid w głównym CuttingFrame
+# Zmiany:
+# - header, tabs i footer używają grid() (zero pack na tym poziomie)
 from __future__ import annotations
 
 import csv
@@ -441,7 +445,7 @@ class CuttingFrame(ttk.Frame):
         header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         header.columnconfigure(0, weight=0)
 
-        # 🔥 ważne — główny layout
+        # 🔥 główny layout — MUSI być
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
@@ -1709,7 +1713,8 @@ class CuttingFrame(ttk.Frame):
 
     def _build_footer(self) -> None:
         footer = ttk.Frame(self, style="Cut.TFrame")
-        footer.pack(fill="x", pady=(10, 0))
+        footer.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        footer.columnconfigure(0, weight=1)
 
         self.var_stock_info = tk.StringVar(value="")
         ttk.Label(footer, textvariable=self.var_stock_info, style="Cut.TLabel").pack(side="left")
