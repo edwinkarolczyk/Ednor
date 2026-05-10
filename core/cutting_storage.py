@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import traceback
 import re
 import time
 from datetime import datetime
@@ -22,6 +23,7 @@ from core.ednor_paths import (
     cutting_stock_moves_file,
     transports_file,
     ensure_data_tree,
+    ednor_data_dir,
 )
 
 DEFAULT_STOCK = {
@@ -74,6 +76,25 @@ DEFAULT_MATERIALS = {
 def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
+
+
+def log_diagnostic(message: str, exc: BaseException | None = None) -> None:
+    """Prosty log diagnostyczny do Ednor_data/logs/ednor.log.
+
+    Nie może wywalić programu. Ma tylko pomóc znaleźć ciche awarie.
+    """
+
+    try:
+        logs_dir = ednor_data_dir() / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        with open(logs_dir / "ednor.log", "a", encoding="utf-8") as handle:
+            handle.write(f"[{_now_iso()}] {message}\n")
+            if exc is not None:
+                handle.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+                handle.write("\n")
+    except Exception:
+        pass
 
 def _safe_name(value: str) -> str:
     value = str(value or "").strip()
@@ -608,6 +629,52 @@ def add_remnant(
     return save_cutting_stock_raw(data)
 
 
+
+
+def _validate_acceptance_available_stock(result: Dict[str, Any], stock: Dict[str, Any]) -> None:
+    """Sprawdza na sucho, czy cała kalkulacja da się zaakceptować.
+
+    Ta funkcja nie zapisuje JSON, nie loguje ruchów i nie zmienia qty.
+    """
+
+    errors: List[str] = []
+    simulated_qty: Dict[str, int] = {}
+
+    for row in stock.get("bars", []) or []:
+        if not isinstance(row, dict):
+            continue
+        rid = str(row.get("id", "")).strip()
+        if not rid:
+            continue
+        simulated_qty[rid] = int(row.get("qty", 0) or 0)
+
+    for bar_index, used_bar in enumerate(result.get("bars_used", []) or [], start=1):
+        if not isinstance(used_bar, dict):
+            continue
+        source = str(used_bar.get("source", "stock") or "stock")
+        if source != "stock":
+            continue
+
+        material_id = str(used_bar.get("material_id", "")).strip()
+        bar_length_mm = float(used_bar.get("bar_length_mm", 0) or 0)
+        if not material_id or bar_length_mm <= 0:
+            errors.append(f"sztanga {bar_index}: brak material_id albo długości")
+            continue
+
+        candidates = _stock_candidates(material_id, stock)
+        chosen_id = None
+        for row in candidates:
+            rid = str(row.get("id", "")).strip()
+            if float(row.get("length_mm", 0) or 0) + 0.001 >= bar_length_mm and simulated_qty.get(rid, 0) > 0:
+                chosen_id = rid
+                simulated_qty[rid] -= 1
+                break
+        if not chosen_id:
+            errors.append(f"brak stanu: {material_id} / {bar_length_mm:g} mm")
+
+    if errors:
+        raise ValueError("Nie można zaakceptować kalkulacji:\n" + "\n".join(errors))
+
 def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
     """Akceptuje kalkulację: zmniejsza stan sztang w magazynie.
 
@@ -637,6 +704,9 @@ def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
 
     errors: List[str] = []
     deductions: List[Dict[str, Any]] = []
+
+    # Najpierw pełna walidacja na sucho. Dopiero potem jakiekolwiek zapisy/logi.
+    _validate_acceptance_available_stock(result, stock)
     created_offcuts: List[Dict[str, Any]] = []
     total_cost_net = 0.0
     total_cost_gross = 0.0
@@ -712,7 +782,10 @@ def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
         }
         deductions.append(deduction)
 
-        log_stock_move(deduction)
+        try:
+            log_stock_move(deduction)
+        except Exception as exc:
+            log_diagnostic("Nie udało się zapisać stock_move po akceptacji", exc)
 
         # Odpad po cięciu wraca do magazynu jako offcut i dziedziczy cenę/transport.
         waste_mm = float(used_bar.get("waste_mm", 0) or 0)
@@ -736,8 +809,9 @@ def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
             }
             offs.append(offcut)
             created_offcuts.append(offcut)
-            log_stock_move(
-                {
+            try:
+                log_stock_move(
+                    {
                     "type": "offcut_add",
                     "job_id": job_id,
                     "material_id": material_id,
@@ -749,8 +823,10 @@ def accept_cutting_calculation(job_id: str, result: Dict[str, Any]) -> str:
                     "price_per_m": price_per_m,
                     "price_mode": price_mode,
                     "vat_percent": vat_percent,
-                }
-            )
+                    }
+                )
+            except Exception as exc:
+                log_diagnostic("Nie udało się zapisać offcut_add po akceptacji", exc)
 
     if errors:
         raise ValueError("Brak stanu do rozchodu: " + ", ".join(errors))
@@ -890,7 +966,46 @@ def next_transport_id(data: Dict[str, Any] | None = None) -> str:
     data = data if isinstance(data, dict) else load_transports_raw()
     return f"TR-{int(data.get('last_seq',0) or 0)+1:06d}"
 
+
+
+def _validate_transport_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Waliduje wszystkie linie transportu przed jakimkolwiek zapisem."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("transport musi być słownikiem")
+
+    lines = payload.get("lines", [])
+    if not isinstance(lines, list) or not lines:
+        raise ValueError("transport musi mieć co najmniej jedną pozycję")
+
+    normalized: List[Dict[str, Any]] = []
+    for idx, line in enumerate(lines, start=1):
+        if not isinstance(line, dict):
+            raise ValueError(f"pozycja transportu {idx}: nieprawidłowy format")
+
+        material_id = str(line.get("material_id", "")).strip()
+        if not material_id:
+            raise ValueError(f"pozycja transportu {idx}: brak surowca")
+
+        length_mm = float(line.get("bar_length_mm", 0) or 0)
+        if length_mm <= 0:
+            raise ValueError(f"pozycja transportu {idx}: długość sztangi musi być > 0")
+
+        qty = int(line.get("qty", 0) or 0)
+        if qty <= 0:
+            raise ValueError(f"pozycja transportu {idx}: ilość musi być > 0")
+
+        price_per_m = float(line.get("price_per_m", 0) or 0)
+        if price_per_m < 0:
+            raise ValueError(f"pozycja transportu {idx}: cena/mb nie może być ujemna")
+
+        normalized.append({**line, "material_id": material_id, "bar_length_mm": length_mm, "qty": qty, "price_per_m": price_per_m})
+
+    return normalized
+
 def save_transport(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized_lines = _validate_transport_payload(payload)
+
     data = load_transports_raw()
     seq = int(data.get("last_seq", 0) or 0) + 1
     tid = f"TR-{seq:06d}"
@@ -901,13 +1016,12 @@ def save_transport(payload: Dict[str, Any]) -> Dict[str, Any]:
         "transport_cost": float(payload.get("transport_cost", 0) or 0),
         "price_mode": str(payload.get("price_mode", "netto") or "netto"),
         "vat_percent": float(payload.get("vat_percent", 23) or 23),
-        "lines": list(payload.get("lines", []) or []),
+        "lines": normalized_lines,
     }
-    if not transport["lines"]:
-        raise ValueError("Transport musi mieć przynajmniej jedną pozycję.")
     data["last_seq"] = seq
     data["transports"].append(transport)
     _write_json(get_transports_path(), data)
-    for idx, line in enumerate(transport["lines"], start=1):
+    for idx, line in enumerate(normalized_lines, start=1):
         add_stock_bar(material_id=str(line.get("material_id","")), length_mm=float(line.get("bar_length_mm",0) or 0), qty=int(line.get("qty",0) or 0), name=str(line.get("material_display", "")), location="transport", transport_id=tid, line_id=f"{tid}-{idx:03d}", price_per_m=float(line.get("price_per_m",0) or 0), price_mode=transport["price_mode"], vat_percent=transport["vat_percent"])
+    transport["lines"] = normalized_lines
     return transport
